@@ -28,6 +28,7 @@ start mongodb replset ::
     ./deploy.py start cluster0
 
 stop mongodb replset ::
+
     ./deploy.py stop cluster0
 
 undeploy mongodb replset ::
