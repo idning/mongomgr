@@ -6,10 +6,10 @@ you need :
 1. rsync
 2. ssh(ssh-copy-id for ssh to target machines without password)
 
-deploy
+config
 ===============
 
-config in config.py::
+in config.py::
 
     #the downloaded mongodb-static-legacy path
     MONGO_DB_PATH = '/home/ning/soft/mongodb-linux-x86_64-2.0.6/'
