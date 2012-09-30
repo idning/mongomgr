@@ -1,9 +1,12 @@
 
 mongodb manager scripts
 
-you need rsync, ssh(ssh to target machines without password)
+you need : 
 
-1. deploy
+1. rsync
+2. ssh(ssh-copy-id for ssh to target machines without password)
+
+deploy
 ===============
 
 config in config.py::
@@ -22,6 +25,9 @@ config in config.py::
         ['localhost', 30004, '/tmp/mongodb-deploy/cluster0/mongodb-30004'],
         ['localhost', 30005, '/tmp/mongodb-deploy/cluster0/mongodb-30005'],
     ]
+
+usage
+===============
 
 start mongodb replset ::
 
