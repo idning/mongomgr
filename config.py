@@ -11,6 +11,7 @@ MONGO_DB_PATH = '/home/ning/soft/mongodb-linux-x86_64-2.0.6/'
 # user account in target machine
 USER = 'ning'
 
+#replset config 1 (should startswith "cluster")
 cluster0 = [
     # host,  port, install path
     ['localhost', 30001, '/tmp/mongodb-deploy/cluster0/mongodb-30001'],
@@ -20,6 +21,7 @@ cluster0 = [
     ['localhost', 30005, '/tmp/mongodb-deploy/cluster0/mongodb-30005'],
 ]
 
+#replset config 2 (should startswith "cluster")
 cluster1 = [
     # host,  port, install path
     ['localhost', 31001, '/home/ning/idning-github/mongomgr/deploy-zone/cluster1/mongodb-31001'],
