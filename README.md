@@ -1,4 +1,0 @@
-mongomgr
-========
-
-mongodb manager scripts
