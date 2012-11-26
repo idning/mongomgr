@@ -37,6 +37,16 @@ def _deploy_single(host, port, path):
     print _system(cmd)
 
 ################################### op
+def replset_ps(replset):
+    for host, port, path in  replset['host']:
+        cmd = 'ssh -n -f %s@%s "ps aux | grep mongo"' % (config.USER, host)
+        print _system(cmd)
+
+def replset_log(replset):
+    for host, port, path in  replset['host']:
+        cmd = 'ssh -n -f %s@%s "cd %s ; tail -20 log/mongod.log"' % (config.USER, host, path)
+        print _system(cmd)
+
 def replset_stop(replset):
     for host, port, path in  replset['host']:
         cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongod -f ./conf/mongod.conf --port %d --shutdown"' % (config.USER, host, path, port)
@@ -51,7 +61,7 @@ def replset_start(replset):
     for host, port, path in  replset['host']:
         _deploy_single(host, port, path)
     time.sleep(5)
-    members = [{'_id': id, 'host': '%s:%d'%(host,port) } for (id, (host, port, path)) in enumerate(replset)]
+    members = [{'_id': id, 'host': '%s:%d'%(host,port) } for (id, (host, port, path)) in enumerate(replset['host'])]
     replset_config = {
         '_id': 'cluster0',
         'members': members
@@ -66,7 +76,7 @@ rs.initiate(config);
     f.close()
     print 'tmp.js: ', js
     
-    primary = replset[0]
+    primary = replset['host'][0]
     ip = socket.gethostbyname(primary[0])
     port = primary[1]
     cmd = './mongodb-base/bin/mongo %s:%d %s' % (ip, port, 'tmp.js')
@@ -76,7 +86,7 @@ rs.initiate(config);
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('op', choices=['start', 'stop', 'clean'], 
+    parser.add_argument('op', choices=['start', 'stop', 'clean', 'ps', 'log'], 
         help='start/stop/clean mongodb replset cluster')
     sets = [s for s in dir(config) if s.startswith('cluster')]
     parser.add_argument('target', choices=sets , help='replset target ')
