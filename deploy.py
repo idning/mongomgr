@@ -24,10 +24,6 @@ def _init():
     _system('mkdir -p ./mongodb-base/db')
     _system('cp mongod.conf ./mongodb-base/conf')
 
-def _toip(replset):
-    for i in replset:
-        i[0] = socket.gethostbyname(i[0])
-    return replset
     
 def _deploy_single(host, port, path):
 
@@ -41,18 +37,18 @@ def _deploy_single(host, port, path):
     print _system(cmd)
 
 ################################### op
-def stop(replset):
-    for host, port, path in  replset:
+def replset_stop(replset):
+    for host, port, path in  replset['host']:
         cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongod -f ./conf/mongod.conf --port %d --shutdown"' % (config.USER, host, path, port)
         print _system(cmd)
 
-def clean(replset):
-    for host, port, path in  replset:
+def replset_clean(replset):
+    for host, port, path in  replset['host']:
         cmd = 'ssh %s@%s "rm -rf %s "' % (config.USER, host, path)
         print _system(cmd)
 
-def start(replset):
-    for host, port, path in  replset:
+def replset_start(replset):
+    for host, port, path in  replset['host']:
         _deploy_single(host, port, path)
     time.sleep(5)
     members = [{'_id': id, 'host': '%s:%d'%(host,port) } for (id, (host, port, path)) in enumerate(replset)]
@@ -81,15 +77,16 @@ rs.initiate(config);
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('op', choices=['start', 'stop', 'clean'], 
-        help='start/stop/clean mongodb cluster')
+        help='start/stop/clean mongodb replset cluster')
     sets = [s for s in dir(config) if s.startswith('cluster')]
     parser.add_argument('target', choices=sets , help='replset target ')
     args = parser.parse_args()
 
-
     _init()
+    cluster = eval('config.%s' % args.target)
+    
     #print args
-    eval('%s(_toip(config.%s))' % (args.op, args.target))
+    eval('%s_%s(config.%s)' % (cluster['type'], args.op, args.target))
 
 if __name__ == "__main__":
     parse_args()
