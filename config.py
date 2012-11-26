@@ -14,7 +14,7 @@ USER = 'rd'
 #replset config 1 (should startswith "cluster")
 cluster0 = {
     'type' : 'replset',
-    'host': [
+    'mongod': [
         # host,  port, install path
         ['10.65.16.245', 30001, '/home/rd/mongodb-deploy/cluster0/mongodb-30001'],
         ['10.65.19.52' , 30002, '/home/rd/mongodb-deploy/cluster0/mongodb-30002'],
@@ -28,7 +28,7 @@ cluster0 = {
 shard0 = cluster0
 shard1 = {
     'type' : 'replset',
-    'host': [
+    'mongod': [
         # host,  port, install path
         ['10.65.16.245', 30011, '/home/rd/mongodb-deploy/cluster0/mongodb-30011'],
         ['10.65.19.52' , 30012, '/home/rd/mongodb-deploy/cluster0/mongodb-30012'],
@@ -39,7 +39,7 @@ shard1 = {
 
 cluster_10 = {
     'type' : 'sharding',
-    'config-server': [
+    'configserver': [
         # host,  port, install path
         ['10.65.16.245', 30101, '/home/rd/mongodb-deploy/cluster0/mongodb-30101'],
         ['10.65.19.52' , 30102, '/home/rd/mongodb-deploy/cluster0/mongodb-30102'],
