@@ -16,11 +16,11 @@ cluster0 = {
     'type' : 'replset',
     'mongod': [
         # host,  port, install path
-        ['10.65.16.245', 30001, '/home/rd/mongodb-deploy/cluster0/mongodb-30001'],
-        ['10.65.19.52' , 30002, '/home/rd/mongodb-deploy/cluster0/mongodb-30002'],
-        ['10.65.16.151', 30003, '/home/rd/mongodb-deploy/cluster0/mongodb-30003'],
-        ['10.65.19.26' , 30004, '/home/rd/mongodb-deploy/cluster0/mongodb-30004'],
-        ['10.65.19.27' , 30005, '/home/rd/mongodb-deploy/cluster0/mongodb-30005'],
+        ['10.65.16.245', 7500, '/home/rd/mongodb-deploy/cluster0/mongodb-7500'],
+        ['10.65.19.52' , 7500, '/home/rd/mongodb-deploy/cluster0/mongodb-7500'],
+        ['10.65.16.151', 7500, '/home/rd/mongodb-deploy/cluster0/mongodb-7500'],
+        ['10.65.19.26' , 7500, '/home/rd/mongodb-deploy/cluster0/mongodb-7500'],
+        ['10.65.19.27' , 7500, '/home/rd/mongodb-deploy/cluster0/mongodb-7500'],
     ]
 }
 
@@ -30,9 +30,9 @@ shard1 = {
     'type' : 'replset',
     'mongod': [
         # host,  port, install path
-        ['10.65.16.245', 30011, '/home/rd/mongodb-deploy/cluster0/mongodb-30011'],
-        ['10.65.19.52' , 30012, '/home/rd/mongodb-deploy/cluster0/mongodb-30012'],
-        ['10.65.16.151', 30013, '/home/rd/mongodb-deploy/cluster0/mongodb-30013'],
+        ['10.65.16.245', 7501, '/home/rd/mongodb-deploy/cluster0/mongodb-7501'],
+        ['10.65.19.52' , 7501, '/home/rd/mongodb-deploy/cluster0/mongodb-7501'],
+        ['10.65.16.151', 7501, '/home/rd/mongodb-deploy/cluster0/mongodb-7501'],
     ]
 }
 
@@ -41,15 +41,15 @@ cluster_10 = {
     'type' : 'sharding',
     'configserver': [
         # host,  port, install path
-        ['10.65.16.245', 30101, '/home/rd/mongodb-deploy/cluster0/mongodb-30101'],
-        ['10.65.19.52' , 30102, '/home/rd/mongodb-deploy/cluster0/mongodb-30102'],
-        ['10.65.16.151', 30103, '/home/rd/mongodb-deploy/cluster0/mongodb-30103'],
+        ['10.65.16.245', 30001, '/home/rd/mongodb-deploy/cluster0/mongodb-30001'],
+        ['10.65.19.52' , 30001, '/home/rd/mongodb-deploy/cluster0/mongodb-30001'],
+        ['10.65.16.151', 30001, '/home/rd/mongodb-deploy/cluster0/mongodb-30001'],
     ],
     'mongos': [
         # host,  port, install path
-        ['10.65.16.245', 30201, '/home/rd/mongodb-deploy/cluster0/mongodb-30201'],
-        ['10.65.19.52' , 30202, '/home/rd/mongodb-deploy/cluster0/mongodb-30202'],
-        ['10.65.16.151', 30203, '/home/rd/mongodb-deploy/cluster0/mongodb-30203'],
+        ['10.65.16.245', 30002, '/home/rd/mongodb-deploy/cluster0/mongodb-30002'],
+        ['10.65.19.52' , 30002, '/home/rd/mongodb-deploy/cluster0/mongodb-30002'],
+        ['10.65.16.151', 30002, '/home/rd/mongodb-deploy/cluster0/mongodb-30002'],
     ], 
     'shard': [
         shard0,
