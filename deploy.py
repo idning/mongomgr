@@ -13,7 +13,7 @@ import config
 import socket
 
 def _system(cmd):
-    print_green('[info] ' + cmd)
+    info(cmd)
     return system(cmd)
 
 def _init():
@@ -24,16 +24,16 @@ def _init():
     _system('mkdir -p ./mongodb-base/db')
     _system('cp mongod.conf ./mongodb-base/conf')
 
-def mongod_alive(host, port):
+def _alive(host, port):
     cmd = 'mongostat --host %s --port %s -n1' % (host, port)
     r = _system(cmd)
     if r.find('insert') >= 0:
         return True
     return False
     
-def mongod_start(host, port, path):
+def mongod_start(host, port, path, replset_name):
 
-    if mongod_alive(host, port):
+    if _alive(host, port):
         print 'already alive:  we do nothing!'
         return 
 
@@ -43,14 +43,17 @@ def mongod_start(host, port, path):
     cmd = 'rsync -avP ./mongodb-base/ %s@%s:%s 1>/dev/null 2>/dev/null' % (config.USER, host, path)
     _system(cmd)
 
-    cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongod -f ./conf/mongod.conf --port %d --fork "' % (config.USER, host, path, port)
+    cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongod -f ./conf/mongod.conf --port %d --replSet %s --fork "' % (config.USER, host, path, port, replset_name)
     print _system(cmd)
+
+def mongod_clean(host, path):
+    cmd = 'ssh %s@%s "rm -rf %s "' % (config.USER, host, path)
+    print _system(cmd)
+
 
 ################################### op
 def replset_ps(replset):
     for host, port, path in  replset['mongod']:
-        #cmd = 'ssh -n -f %s@%s "ps aux | grep mongo | grep %d"' % (config.USER, host, port)
-        #print _system(cmd)
         cmd = 'ssh -n -f %s@%s "pgrep -l -f \'./bin/mongod -f ./conf/mongod.conf --port %d \'"' % (config.USER, host, port)
         print _system(cmd)
 
@@ -71,25 +74,28 @@ def replset_stop(replset):
 
 def replset_clean(replset):
     for host, port, path in  replset['mongod']:
-        cmd = 'ssh %s@%s "rm -rf %s "' % (config.USER, host, path)
-        print _system(cmd)
+        mongod_clean(host, path)
+
+tmpfile= TmpFile()
 
 def run_js(host, port, js):
-    f = file('tmp.js', 'w')
-    f.write(js)
-    f.close()
-    print 'tmp.js: ', js
+    print 'run_js: \n', js
+    filename = tmpfile.content_to_tmpfile(js)
 
-    cmd = './mongodb-base/bin/mongo %s:%d/admin %s' % (host, port, 'tmp.js')
-    print _system(cmd)
+    cmd = './mongodb-base/bin/mongo %s:%d/admin %s' % (host, port, filename)
+    rst = _system(cmd)
+    if rst.find('command failed') >=0:
+        raise Exception('run js error: \n' + rst)
+    print rst
+
 
 def replset_start(replset):
     for host, port, path in  replset['mongod']:
-        mongod_start(host, port, path)
+        mongod_start(host, port, path, replset['replset_name'])
     time.sleep(5)
     members = [{'_id': id, 'host': '%s:%d'%(host,port) } for (id, (host, port, path)) in enumerate(replset['mongod'])]
     replset_config = {
-        '_id': 'cluster0',
+        '_id': replset['replset_name'],
         'members': members
     }
     js = '''
@@ -107,6 +113,10 @@ rs.initiate(config);
 
 def mongos_start(mongos, configdb):
     [host, port, path] = mongos
+
+    if _alive(host, port):
+        print 'already alive:  we do nothing!'
+        return 
 
     cmd = 'ssh -n -f %s@%s "mkdir -p %s "' % (config.USER, host, path)
     _system(cmd)
@@ -133,6 +143,10 @@ def mongos_ps(mongos, configdb):
 def configserver_start(configserver):
     [host, port, path] = configserver
 
+    if _alive(host, port):
+        print 'already alive:  we do nothing!'
+        return 
+
     cmd = 'ssh -n -f %s@%s "mkdir -p %s "' % (config.USER, host, path)
     _system(cmd)
 
@@ -155,6 +169,9 @@ def configserver_ps(configserver):
     cmd = '''ssh -n -f %s@%s "pgrep -l -f './bin/mongod --configsvr --dbpath ./db --logpath ./log/mongod.log --port %d --fork' "''' % (config.USER, host, port)
     print _system(cmd)
 
+def sharding_status(sharding):
+    [ip, port, path] = sharding['mongos'][0]
+    run_js(ip, port, 'sh.status()')
 
 def sharding_start(sharding):
     configdb = ['%s:%d' % (i[0], i[1]) for i in sharding['configserver']]
@@ -169,17 +186,27 @@ def sharding_start(sharding):
     for mongos in sharding['mongos']:
         mongos_start(mongos, configdb)
 
-
-    for shard in sharding['shard']:
+    @retry(Exception, tries=2)
+    def add_shard(shard):
         members = ['%s:%d'%(host,port) for (id, (host, port, path)) in enumerate(shard['mongod'])]
         members = ','.join(members)
         js =''' 
         //use admin;
-        sh.addShard( "cluster0/%s" );
-        ''' % members
+        sh.addShard( "%s/%s" );
+        ''' % (shard['replset_name'], members)
 
         [ip, port, path] = sharding['mongos'][0]
-        run_js(ip, port, js)
+        try: 
+            run_js(ip, port, js)
+        except Exception as e: 
+            if str(e).find('E11000 duplicate key error index: config.shards.$_id_') >= 0:
+                print 'shard already added !!!'
+                return 
+            raise e
+
+    for shard in sharding['shard']:
+        add_shard(shard)
+    sharding_status(sharding)
 
 
 def sharding_ps(sharding):
@@ -191,15 +218,10 @@ def sharding_ps(sharding):
 
     for mongos in sharding['mongos']:
         mongos_ps(mongos, configdb)
-        #[host, port, path] = mongos
-        #cmd = 'ssh -n -f %s@%s "ps aux | grep mongo"' % (config.USER, host)
-        #print _system(cmd)
 
     for configserver in sharding['configserver']:
         configserver_ps(configserver)
-        #[host, port, path] = configserver
-        #cmd = 'ssh -n -f %s@%s "ps aux | grep mongo"' % (config.USER, host)
-        #print _system(cmd)
+    sharding_status(sharding)
 
 def sharding_kill(sharding):
     for shard in sharding['shard']:
@@ -213,6 +235,18 @@ def sharding_kill(sharding):
 
     for configserver in sharding['configserver']:
         configserver_kill(configserver)
+
+mongos_clean = mongod_clean
+configserver_clean = mongod_clean
+
+def sharding_clean(sharding):
+    for shard in sharding['shard']:
+        replset_clean(shard)
+
+    for host, port, path in sharding['mongos']:
+        mongos_clean(host, path)
+    for host, port, path in sharding['configserver']:
+        configserver_clean(host, path)
 
 def discover_op():
     sets =  globals().keys()

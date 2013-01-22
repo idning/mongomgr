@@ -171,4 +171,85 @@ def init_logging(logger, set_level = logging.INFO,
         fh.setFormatter(formatter)
         logger.addHandler(fh)
 
+def debug(msg):
+    print('[DEBUG] ' + msg)
+
+def info(msg):
+    print_green('[INFO] ' + msg)
+
+def warning(msg):
+    print_yellow('[WARNING] ' + msg)
+
+def error(msg):
+    print_red('[ERROR] ' + msg)
+
+def retry(ExceptionToCheck, tries=4, delay=2, backoff=2, logger=None):
+    """Retry calling the decorated function using an exponential backoff.
+
+    http://www.saltycrane.com/blog/2009/11/trying-out-retry-decorator-python/
+    original from: http://wiki.python.org/moin/PythonDecoratorLibrary#Retry
+
+    :param ExceptionToCheck: the exception to check. may be a tuple of
+        excpetions to check
+    :type ExceptionToCheck: Exception or tuple
+    :param tries: number of times to try (not retry) before giving up
+    :type tries: int
+    :param delay: initial delay between retries in seconds
+    :type delay: int
+    :param backoff: backoff multiplier e.g. value of 2 will double the delay
+        each retry
+    :type backoff: int
+    :param logger: logger to use. If None, print
+    :type logger: logging.Logger instance
+    """
+    def deco_retry(f):
+        def f_retry(*args, **kwargs):
+            mtries, mdelay = tries, delay
+            try_one_last_time = True
+            while mtries > 1:
+                try:
+                    return f(*args, **kwargs)
+                    try_one_last_time = False
+                    break
+                except ExceptionToCheck, e:
+                    msg = "%s, Retrying in %d seconds..." % (str(e), mdelay)
+                    if logger:
+                        logger.warning(msg)
+                    elif warning:
+                        warning(msg)
+                    else:
+                        print msg
+                    time.sleep(mdelay)
+                    mtries -= 1
+                    mdelay *= backoff
+            if try_one_last_time:
+                return f(*args, **kwargs)
+            return
+        return f_retry  # true decorator
+    return deco_retry
+
+
+class TmpFile:
+    def __init__(self, tmp_dir = './tmp/'):
+        self.tmp_dir = tmp_dir
+
+        if not os.path.exists(tmp_dir):
+            os.makedirs(tmp_dir, mode=0777) 
+            os.chmod(tmp_dir, 0777)
+
+    def random_tmp_file(self, key):
+        from datetime import datetime
+        name = str(datetime.now())
+        name = name.replace(' ', '_')
+        name = name.replace(':', '_')
+        name = name.replace('.', '_')
+        return self.tmp_dir + key + name
+
+    def content_to_tmpfile(self, content):
+        tmp_file = self.random_tmp_file('_')
+        f = file(tmp_file, 'wb')
+        f.write(content)
+        f.close()
+        return tmp_file
+
 

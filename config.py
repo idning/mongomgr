@@ -14,6 +14,7 @@ USER = 'rd'
 #replset config 1 (should startswith "cluster")
 cluster0 = {
     'type' : 'replset',
+    'replset_name' : 'cluster0',
     'mongod': [
         # host,  port, install path
         ['10.65.16.245', 7500, '/home/rd/mongodb-deploy/cluster0/mongodb-7500'],
@@ -28,6 +29,7 @@ cluster0 = {
 shard0 = cluster0
 shard1 = {
     'type' : 'replset',
+    'replset_name' : 'set1',
     'mongod': [
         # host,  port, install path
         ['10.65.16.245', 7501, '/home/rd/mongodb-deploy/cluster0/mongodb-7501'],
