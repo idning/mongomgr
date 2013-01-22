@@ -24,18 +24,17 @@ def _init():
     _system('mkdir -p ./mongodb-base/db')
     _system('cp mongod.conf ./mongodb-base/conf')
 
-def _alive(host, port):
+def _alive(mongod):
+    [host, port, path] = mongod
+
     cmd = 'mongostat --host %s --port %s -n1' % (host, port)
     r = _system(cmd)
     if r.find('insert') >= 0:
         return True
     return False
     
-def mongod_start(host, port, path, replset_name):
-
-    if _alive(host, port):
-        print 'already alive:  we do nothing!'
-        return 
+def _copy_files(mongod):
+    [host, port, path] = mongod
 
     cmd = 'ssh -n -f %s@%s "mkdir -p %s "' % (config.USER, host, path)
     _system(cmd)
@@ -43,44 +42,9 @@ def mongod_start(host, port, path, replset_name):
     cmd = 'rsync -avP ./mongodb-base/ %s@%s:%s 1>/dev/null 2>/dev/null' % (config.USER, host, path)
     _system(cmd)
 
-    cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongod -f ./conf/mongod.conf --port %d --replSet %s --fork "' % (config.USER, host, path, port, replset_name)
-    print _system(cmd)
-
-def mongod_clean(host, path):
-    cmd = 'ssh %s@%s "rm -rf %s "' % (config.USER, host, path)
-    print _system(cmd)
-
-
-################################### op
-def replset_ps(replset):
-    for host, port, path in  replset['mongod']:
-        cmd = 'ssh -n -f %s@%s "pgrep -l -f \'./bin/mongod -f ./conf/mongod.conf --port %d \'"' % (config.USER, host, port)
-        print _system(cmd)
-
-def replset_log(replset):
-    for host, port, path in  replset['mongod']:
-        cmd = 'ssh -n -f %s@%s "cd %s ; tail -20 log/mongod.log"' % (config.USER, host, path)
-        print _system(cmd)
-
-def replset_kill(replset):
-    for host, port, path in  replset['mongod']:
-        cmd = 'ssh -n -f %s@%s "pkill -9 -f \'./bin/mongod -f ./conf/mongod.conf --port %d \'"' % (config.USER, host, port)
-        print _system(cmd)
-
-def replset_stop(replset):
-    for host, port, path in  replset['mongod']:
-        cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongod -f ./conf/mongod.conf --port %d --shutdown"' % (config.USER, host, path, port)
-        print _system(cmd)
-
-def replset_clean(replset):
-    for host, port, path in  replset['mongod']:
-        mongod_clean(host, path)
-
-tmpfile= TmpFile()
-
-def run_js(host, port, js):
+def _run_js(host, port, js):
     print 'run_js: \n', js
-    filename = tmpfile.content_to_tmpfile(js)
+    filename = TmpFile().content_to_tmpfile(js)
 
     cmd = './mongodb-base/bin/mongo %s:%d/admin %s' % (host, port, filename)
     rst = _system(cmd)
@@ -88,10 +52,34 @@ def run_js(host, port, js):
         raise Exception('run js error: \n' + rst)
     print rst
 
+############# mongod op
+def mongod_start(mongod, replset_name):
+    [host, port, path] = mongod
 
+    if _alive(mongod):
+        print 'already alive:  we do nothing!'
+        return 
+    _copy_files(mongod)
+
+    cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongod -f ./conf/mongod.conf --port %d --replSet %s --fork "' % (config.USER, host, path, port, replset_name)
+    print _system(cmd)
+
+def mongod_log(mongod):
+    [host, port, path] = mongod
+    cmd = 'ssh -n -f %s@%s "cd %s ; tail -20 log/mongod.log"' % (config.USER, host, path)
+    print _system(cmd)
+
+def mongod_clean(host, path):
+    cmd = 'ssh %s@%s "rm -rf %s "' % (config.USER, host, path)
+    print _system(cmd)
+
+
+############# replset op
 def replset_start(replset):
-    for host, port, path in  replset['mongod']:
-        mongod_start(host, port, path, replset['replset_name'])
+    for mongod in  replset['mongod']:
+        mongod_start(mongod, replset['replset_name'])
+
+    #make js
     time.sleep(5)
     members = [{'_id': id, 'host': '%s:%d'%(host,port) } for (id, (host, port, path)) in enumerate(replset['mongod'])]
     replset_config = {
@@ -102,65 +90,49 @@ def replset_start(replset):
 config = %s;
 rs.initiate(config);
 ''' % json.dumps(replset_config)
-
     
     primary = replset['mongod'][0]
     ip = socket.gethostbyname(primary[0])
     port = primary[1]
-    run_js(ip, port, js)
+    _run_js(ip, port, js)
 
     print_green( 'see http://%s:%d/_replSet' % (primary[0], 1000+primary[1]) )
 
-def mongos_start(mongos, configdb):
-    [host, port, path] = mongos
 
-    if _alive(host, port):
-        print 'already alive:  we do nothing!'
-        return 
+def replset_ps(replset):
+    for host, port, path in  replset['mongod']:
+        cmd = 'ssh -n -f %s@%s "pgrep -l -f \'./bin/mongod -f ./conf/mongod.conf --port %d \'"' % (config.USER, host, port)
+        print _system(cmd)
 
-    cmd = 'ssh -n -f %s@%s "mkdir -p %s "' % (config.USER, host, path)
-    _system(cmd)
+def replset_log(replset):
+    for mongod in  replset['mongod']:
+        mongod_log(mongod)
 
-    cmd = 'rsync -avP ./mongodb-base/ %s@%s:%s 1>/dev/null 2>/dev/null' % (config.USER, host, path)
-    _system(cmd)
+def replset_stop(replset):
+    for host, port, path in  replset['mongod']:
+        cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongod -f ./conf/mongod.conf --port %d --shutdown"' % (config.USER, host, path, port)
+        print _system(cmd)
 
-    cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongos --configdb %s --logpath ./log/mongod.log --port %d --fork "' % (config.USER, host, path, configdb, port)
-    print _system(cmd)
+def replset_kill(replset):
+    for host, port, path in  replset['mongod']:
+        cmd = 'ssh -n -f %s@%s "pkill -9 -f \'./bin/mongod -f ./conf/mongod.conf --port %d \'"' % (config.USER, host, port)
+        print _system(cmd)
 
+def replset_clean(replset):
+    for host, port, path in  replset['mongod']:
+        mongod_clean(host, path)
 
-def mongos_kill(mongos, configdb):
-    [host, port, path] = mongos
-
-    cmd = '''ssh -n -f %s@%s "pkill -f  './bin/mongos --configdb %s --logpath ./log/mongod.log --port %d --fork' "''' % (config.USER, host, configdb, port)
-    print _system(cmd)
-
-def mongos_ps(mongos, configdb):
-    [host, port, path] = mongos
-
-    cmd = '''ssh -n -f %s@%s "pgrep -l -f  './bin/mongos --configdb %s --logpath ./log/mongod.log --port %d --fork' "''' % (config.USER, host, configdb, port)
-    print _system(cmd)
-
+############# configserver op
 def configserver_start(configserver):
     [host, port, path] = configserver
 
-    if _alive(host, port):
+    if _alive(configserver):
         print 'already alive:  we do nothing!'
         return 
 
-    cmd = 'ssh -n -f %s@%s "mkdir -p %s "' % (config.USER, host, path)
-    _system(cmd)
-
-    cmd = 'rsync -avP ./mongodb-base/ %s@%s:%s 1>/dev/null 2>/dev/null' % (config.USER, host, path)
-    _system(cmd)
+    _copy_files(configserver)
 
     cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongod --configsvr --dbpath ./db --logpath ./log/mongod.log --port %d --fork "' % (config.USER, host, path, port)
-    print _system(cmd)
-
-
-def configserver_kill(configserver):
-    [host, port, path] = configserver
-
-    cmd = '''ssh -n -f %s@%s "pkill -f './bin/mongod --configsvr --dbpath ./db --logpath ./log/mongod.log --port %d --fork' "''' % (config.USER, host, port)
     print _system(cmd)
 
 def configserver_ps(configserver):
@@ -169,9 +141,41 @@ def configserver_ps(configserver):
     cmd = '''ssh -n -f %s@%s "pgrep -l -f './bin/mongod --configsvr --dbpath ./db --logpath ./log/mongod.log --port %d --fork' "''' % (config.USER, host, port)
     print _system(cmd)
 
-def sharding_status(sharding):
+def configserver_kill(configserver):
+    [host, port, path] = configserver
+
+    cmd = '''ssh -n -f %s@%s "pkill -f './bin/mongod --configsvr --dbpath ./db --logpath ./log/mongod.log --port %d --fork' "''' % (config.USER, host, port)
+    print _system(cmd)
+
+############# mongos op
+def mongos_start(mongos, configdb):
+    [host, port, path] = mongos
+
+    if _alive(mongos):
+        print 'already alive:  we do nothing!'
+        return 
+
+    _copy_files(mongos)
+
+    cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongos --configdb %s --logpath ./log/mongod.log --port %d --fork "' % (config.USER, host, path, configdb, port)
+    print _system(cmd)
+
+def mongos_ps(mongos, configdb):
+    [host, port, path] = mongos
+
+    cmd = '''ssh -n -f %s@%s "pgrep -l -f  './bin/mongos --configdb %s --logpath ./log/mongod.log --port %d --fork' "''' % (config.USER, host, configdb, port)
+    print _system(cmd)
+
+def mongos_kill(mongos, configdb):
+    [host, port, path] = mongos
+
+    cmd = '''ssh -n -f %s@%s "pkill -f  './bin/mongos --configdb %s --logpath ./log/mongod.log --port %d --fork' "''' % (config.USER, host, configdb, port)
+    print _system(cmd)
+
+############# sharding op
+def _sharding_status(sharding):
     [ip, port, path] = sharding['mongos'][0]
-    run_js(ip, port, 'sh.status()')
+    _run_js(ip, port, 'sh.status()')
 
 def sharding_start(sharding):
     configdb = ['%s:%d' % (i[0], i[1]) for i in sharding['configserver']]
@@ -197,7 +201,7 @@ def sharding_start(sharding):
 
         [ip, port, path] = sharding['mongos'][0]
         try: 
-            run_js(ip, port, js)
+            _run_js(ip, port, js)
         except Exception as e: 
             if str(e).find('E11000 duplicate key error index: config.shards.$_id_') >= 0:
                 print 'shard already added !!!'
@@ -206,7 +210,7 @@ def sharding_start(sharding):
 
     for shard in sharding['shard']:
         add_shard(shard)
-    sharding_status(sharding)
+    _sharding_status(sharding)
 
 
 def sharding_ps(sharding):
@@ -221,7 +225,29 @@ def sharding_ps(sharding):
 
     for configserver in sharding['configserver']:
         configserver_ps(configserver)
-    sharding_status(sharding)
+    _sharding_status(sharding)
+
+
+def sharding_log(sharding):
+    for shard in sharding['shard']:
+        replset_log(shard)
+    for mongos in sharding['mongos']:
+        mongod_log(mongos)
+    for configserver in sharding['configserver']:
+        mongod_log(configserver)
+
+def sharding_stop(sharding):
+    for shard in sharding['shard']:
+        replset_stop(shard)
+
+    configdb = ['%s:%d' % (i[0], i[1]) for i in sharding['configserver']]
+    configdb = ','.join(configdb)
+
+    for mongos in sharding['mongos']:   # use kill for mongos
+        mongos_kill(mongos, configdb)
+
+    for configserver in sharding['configserver']:
+        configserver_kill(configserver)
 
 def sharding_kill(sharding):
     for shard in sharding['shard']:
