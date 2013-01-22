@@ -7,7 +7,7 @@ you need :
 2. ssh(ssh-copy-id for ssh to target machines without password)
 
 config
-===============
+======
 
 in config.py::
 
@@ -27,7 +27,7 @@ in config.py::
     ]
 
 usage
-===============
+=====
 
 start mongodb replset ::
 
@@ -42,4 +42,4 @@ undeploy mongodb replset ::
     ./deploy.py clean cluster0
 
 
-
+tmp
