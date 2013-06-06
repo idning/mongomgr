@@ -53,15 +53,33 @@ def _run_js(host, port, js):
     print rst
 
 ############# mongod op
-def mongod_start(mongod, replset_name):
+def mongod_start(mongod, replset_name=''):
     [host, port, path] = mongod
 
     if _alive(mongod):
         print 'already alive:  we do nothing!'
         return 
     _copy_files(mongod)
+    if replset_name:
+        cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongod -f ./conf/mongod.conf --port %d --replSet %s --fork "' % (config.USER, host, path, port, replset_name)
+        print _system(cmd)
+    else:
+        cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongod -f ./conf/mongod.conf --port %d --fork "' % (config.USER, host, path, port)
+        print _system(cmd)
 
-    cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongod -f ./conf/mongod.conf --port %d --replSet %s --fork "' % (config.USER, host, path, port, replset_name)
+def mongod_ps(mongod):
+    host, port, path = mongod
+    cmd = 'ssh -n -f %s@%s "pgrep -l -f \'./bin/mongod -f ./conf/mongod.conf --port %d \'"' % (config.USER, host, port)
+    print _system(cmd)
+
+def mongod_stop(mongod):
+    host, port, path = mongod
+    cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongod -f ./conf/mongod.conf --port %d --shutdown"' % (config.USER, host, path, port)
+    print _system(cmd)
+
+def mongod_kill(mongod):
+    host, port, path = mongod
+    cmd = 'ssh -n -f %s@%s "pkill -9 -f \'./bin/mongod -f ./conf/mongod.conf --port %d \'"' % (config.USER, host, port)
     print _system(cmd)
 
 def mongod_log(mongod):
@@ -69,7 +87,8 @@ def mongod_log(mongod):
     cmd = 'ssh -n -f %s@%s "cd %s ; tail -20 log/mongod.log"' % (config.USER, host, path)
     print _system(cmd)
 
-def mongod_clean(host, path):
+def mongod_clean(mongod):
+    [host, port, path] = mongod
     cmd = 'ssh %s@%s "rm -rf %s "' % (config.USER, host, path)
     print _system(cmd)
 
@@ -109,18 +128,16 @@ def replset_log(replset):
         mongod_log(mongod)
 
 def replset_stop(replset):
-    for host, port, path in  replset['mongod']:
-        cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongod -f ./conf/mongod.conf --port %d --shutdown"' % (config.USER, host, path, port)
-        print _system(cmd)
+    for mongod in  replset['mongod']:
+        mongod_stop(mongod)
 
 def replset_kill(replset):
-    for host, port, path in  replset['mongod']:
-        cmd = 'ssh -n -f %s@%s "pkill -9 -f \'./bin/mongod -f ./conf/mongod.conf --port %d \'"' % (config.USER, host, port)
-        print _system(cmd)
+    for mongod in  replset['mongod']:
+        mongod_kill(mongod)
 
 def replset_clean(replset):
-    for host, port, path in  replset['mongod']:
-        mongod_clean(host, path)
+    for mongod in  replset['mongod']:
+        mongod_clean(mongod)
 
 ############# configserver op
 def configserver_start(configserver):
@@ -182,7 +199,10 @@ def sharding_start(sharding):
     configdb = ','.join(configdb)
 
     for shard in sharding['shard']:
-        replset_start(shard)
+        if shard['type'] == 'replset':
+            replset_start(shard)
+        elif shard['type'] == 'mongod':
+            mongod_start(shard['server'])
 
     for configserver in sharding['configserver']:
         configserver_start(configserver)
@@ -192,12 +212,20 @@ def sharding_start(sharding):
 
     @retry(Exception, tries=2)
     def add_shard(shard):
-        members = ['%s:%d'%(host,port) for (id, (host, port, path)) in enumerate(shard['mongod'])]
-        members = ','.join(members)
-        js =''' 
-        //use admin;
-        sh.addShard( "%s/%s" );
-        ''' % (shard['replset_name'], members)
+        if shard['type'] == 'replset':
+            members = ['%s:%d'%(host,port) for (id, (host, port, path)) in enumerate(shard['mongod'])]
+            members = ','.join(members)
+            js =''' 
+            //use admin;
+            sh.addShard( "%s/%s" );
+            ''' % (shard['replset_name'], members)
+        elif shard['type'] == 'mongod':
+            host,port,path = shard['server']
+            members = '%s:%d'%(host,port)
+            js =''' 
+            //use admin;
+            sh.addShard( "%s" );
+            ''' % (members)
 
         [ip, port, path] = sharding['mongos'][0]
         try: 
@@ -212,13 +240,19 @@ def sharding_start(sharding):
         add_shard(shard)
     _sharding_status(sharding)
 
+    print "please run:"
+    print "sh.enableSharding('report')"
+    print "sh.shardCollection('report.jomo_report_2013053116', {uuid:1})"
 
 def sharding_ps(sharding):
     configdb = ['%s:%d' % (i[0], i[1]) for i in sharding['configserver']]
     configdb = ','.join(configdb)
 
     for shard in sharding['shard']:
-        replset_ps(shard)
+        if shard['type'] == 'replset':
+            replset_ps(shard)
+        elif shard['type'] == 'mongod':
+            mongod_ps(shard['server'])
 
     for mongos in sharding['mongos']:
         mongos_ps(mongos, configdb)
@@ -230,7 +264,11 @@ def sharding_ps(sharding):
 
 def sharding_log(sharding):
     for shard in sharding['shard']:
-        replset_log(shard)
+        if shard['type'] == 'replset':
+            replset_log(shard)
+        elif shard['type'] == 'mongod':
+            mongod_log(shard['server'])
+        
     for mongos in sharding['mongos']:
         mongod_log(mongos)
     for configserver in sharding['configserver']:
@@ -238,7 +276,10 @@ def sharding_log(sharding):
 
 def sharding_stop(sharding):
     for shard in sharding['shard']:
-        replset_stop(shard)
+        if shard['type'] == 'replset':
+            replset_stop(shard)
+        elif shard['type'] == 'mongod':
+            mongod_stop(shard['server'])
 
     configdb = ['%s:%d' % (i[0], i[1]) for i in sharding['configserver']]
     configdb = ','.join(configdb)
@@ -251,7 +292,10 @@ def sharding_stop(sharding):
 
 def sharding_kill(sharding):
     for shard in sharding['shard']:
-        replset_kill(shard)
+        if shard['type'] == 'replset':
+            replset_kill(shard)
+        elif shard['type'] == 'mongod':
+            mongod_kill(shard['server'])
 
     configdb = ['%s:%d' % (i[0], i[1]) for i in sharding['configserver']]
     configdb = ','.join(configdb)
@@ -267,12 +311,15 @@ configserver_clean = mongod_clean
 
 def sharding_clean(sharding):
     for shard in sharding['shard']:
-        replset_clean(shard)
+        if shard['type'] == 'replset':
+            replset_clean(shard)
+        elif shard['type'] == 'mongod':
+            mongod_clean(shard['server'])
 
-    for host, port, path in sharding['mongos']:
-        mongos_clean(host, path)
-    for host, port, path in sharding['configserver']:
-        configserver_clean(host, path)
+    for mongos in sharding['mongos']:
+        mongos_clean(mongos)
+    for configserver in sharding['configserver']:
+        configserver_clean(configserver)
 
 def discover_op():
     sets =  globals().keys()

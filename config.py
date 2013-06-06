@@ -59,3 +59,26 @@ cluster_10 = {
     ]
 }
 
+
+USER = 'bae'
+cluster_j = {
+    'type' : 'sharding',
+    'configserver': [
+        # host,  port, install path
+        ['10.42.42.58', 7222, '/home/bae/configsvr'],
+    ],
+    'mongos': [
+        # host,  port, install path
+        ['10.46.190.58', 7333, '/home/bae/mongos'],
+    ], 
+    'shard': [
+        { # shard 1
+            'type' : 'mongod',
+            'server': ['10.46.190.58', 7111, '/home/bae/mongod'],
+        },
+        { # shard 2
+            'type' : 'mongod',
+            'server': ['10.42.42.58',  7111, '/home/bae/mongod'],
+        },
+    ]
+}
