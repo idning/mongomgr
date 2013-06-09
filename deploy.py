@@ -339,10 +339,13 @@ def parse_args():
     args = parser.parse_args()
 
     _init()
+    print args
+
     cluster = eval('config.%s' % args.target)
-    
-    #print args
-    eval('%s_%s(config.%s)' % (cluster['type'], args.op, args.target))
+    func = eval('%s_%s' % (cluster['type'], args.op) )
+    config.USER = cluster['user']
+    func(cluster)
+    #eval('%s_%s(config.%s)' % (, args.target))
 
 if __name__ == "__main__":
     parse_args()

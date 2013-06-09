@@ -9,11 +9,11 @@
 MONGO_DB_PATH = '/home/yanglin/soft_packages/mongodb-linux-x86_64-static-legacy-2.0.6/'
 
 # user account in target machine
-USER = 'rd'
 
 #replset config 1 (should startswith "cluster")
 cluster0 = {
     'type' : 'replset',
+    'user' : 'rd',
     'replset_name' : 'cluster0',
     'mongod': [
         # host,  port, install path
@@ -29,6 +29,7 @@ cluster0 = {
 shard0 = cluster0
 shard1 = {
     'type' : 'replset',
+    'user' : 'rd',
     'replset_name' : 'set1',
     'mongod': [
         # host,  port, install path
@@ -41,6 +42,7 @@ shard1 = {
 
 cluster_10 = {
     'type' : 'sharding',
+    'user' : 'rd',
     'configserver': [
         # host,  port, install path
         ['10.65.16.245', 30001, '/home/rd/mongodb-deploy/cluster0/mongodb-30001'],
@@ -60,9 +62,9 @@ cluster_10 = {
 }
 
 
-USER = 'bae'
 cluster_j = {
     'type' : 'sharding',
+    'user' : 'bae',
     'configserver': [
         # host,  port, install path
         ['10.42.42.58', 7222, '/home/bae/configsvr'],
