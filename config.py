@@ -62,6 +62,7 @@ cluster_10 = {
 }
 
 
+# hide it
 cluster_j = {
     'type' : 'sharding',
     'user' : 'bae',
@@ -81,6 +82,77 @@ cluster_j = {
         { # shard 2
             'type' : 'mongod',
             'server': ['10.42.42.58',  7111, '/home/bae/mongod'],
+        },
+    ]
+}
+
+cluster_test = {
+    'type' : 'sharding',
+    'user' : 'rd',
+    'configserver': [
+        # host,  port, install path
+        ['10.65.16.245', 17222, '/home/rd/mongodb-deploy/cluster_test/configsvr'],
+    ],
+    'mongos': [
+        # host,  port, install path
+        ['10.65.19.52', 17333, '/home/rd/mongodb-deploy/cluster_test/mongos'],
+        ['10.65.16.245', 17333, '/home/rd/mongodb-deploy/cluster_test/mongos'],
+    ], 
+    'shard': [
+        { # shard 1
+            'type' : 'replset',
+            'replset_name' : 'set_test_1',
+            'mongod': [
+                # host,  port, install path
+                ['10.65.16.245', 17111, '/home/rd/mongodb-deploy/cluster_test/mongodb-17111'],
+                ['10.65.19.52', 17111, '/home/rd/mongodb-deploy/cluster_test/mongodb-17111'],
+                ['10.65.19.26', 17111, '/home/rd/mongodb-deploy/cluster_test/mongodb-17111'],
+            ]
+        },
+        { # shard 2
+            'type' : 'replset',
+            'replset_name' : 'set_test_2',
+            'mongod': [
+                # host,  port, install path
+                ['10.65.16.245', 27111, '/home/rd/mongodb-deploy/cluster_test/mongodb-27111'],
+                ['10.65.19.52', 27111, '/home/rd/mongodb-deploy/cluster_test/mongodb-27111'],
+                ['10.65.19.26', 27111, '/home/rd/mongodb-deploy/cluster_test/mongodb-27111'],
+            ]
+        },
+    ]
+}
+
+cluster_t2 = {
+    'type' : 'sharding',
+    'user' : 'rd',
+    'configserver': [
+        # host,  port, install path
+        ['10.65.16.245', 37222, '/home/rd/mongodb-deploy/cluster_t2/configsvr'],
+    ],
+    'mongos': [
+        # host,  port, install path
+        ['10.65.19.52', 37333, '/home/rd/mongodb-deploy/cluster_t2/mongos'],
+    ], 
+    'shard': [
+        { # shard 1
+            'type' : 'replset',
+            'replset_name' : 'set_test_1',
+            'mongod': [
+                # host,  port, install path
+                ['10.65.16.245', 37111, '/home/rd/mongodb-deploy/cluster_t2/mongodb-37111'],
+                ['10.65.19.52', 37111, '/home/rd/mongodb-deploy/cluster_t2/mongodb-37111'],
+                ['10.65.19.26', 37111, '/home/rd/mongodb-deploy/cluster_t2/mongodb-37111'],
+            ]
+        },
+        { # shard 2
+            'type' : 'replset',
+            'replset_name' : 'set_test_2',
+            'mongod': [
+                # host,  port, install path
+                ['10.65.16.245', 47111, '/home/rd/mongodb-deploy/cluster_t2/mongodb-47111'],
+                ['10.65.19.52', 47111, '/home/rd/mongodb-deploy/cluster_t2/mongodb-47111'],
+                ['10.65.19.26', 47111, '/home/rd/mongodb-deploy/cluster_t2/mongodb-47111'],
+            ]
         },
     ]
 }

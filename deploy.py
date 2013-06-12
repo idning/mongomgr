@@ -234,7 +234,13 @@ def sharding_start(sharding):
             if str(e).find('E11000 duplicate key error index: config.shards.$_id_') >= 0:
                 print 'shard already added !!!'
                 return 
-            raise e
+            if str(e).find('host already used') >= 0:
+                print 'shard already added !!!'
+                return 
+            #warning(str(e))
+            warning('add shard return error with: \n' + str(e))
+            #raise e
+
 
     for shard in sharding['shard']:
         add_shard(shard)
