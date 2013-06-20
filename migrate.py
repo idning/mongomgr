@@ -7,19 +7,25 @@
 
 import urllib, urllib2, httplib, os, re, sys, time, logging, hmac, base64, commands, glob
 import json
-from common import *
 import argparse
 import config
 import socket
 import pymongo, bson
 import threading
 import calendar
+from common import *
 
 def _system(cmd):
     info(cmd)
     return system(cmd)
     
-class myThread (threading.Thread):
+class StatusChecker():
+    '''
+    
+    '''
+    pass
+
+class OplogReplayer(threading.Thread):
     def __init__(self, src, args):
         threading.Thread.__init__(self)
         self.name = src
@@ -181,7 +187,7 @@ def main(args):
         set_conn = pymongo.ReplicaSetConnection(hosts, replicaSet=setname)
         primary = '%s:%d' % set_conn.primary
         info("primary: " + primary)
-        myThread(primary, args).start()
+        OplogReplayer(primary, args).start()
 
 def parse_args():
     parser = argparse.ArgumentParser()

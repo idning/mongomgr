@@ -125,6 +125,10 @@ cluster_test = {
 cluster_t2 = {
     'type' : 'sharding',
     'user' : 'rd',
+    'auth' : {                  # only for sharding
+        'user': 'structure', 
+        'password': 'PcSmongoPcs', 
+    },
     'configserver': [
         # host,  port, install path
         ['10.65.16.245', 37222, '/home/rd/mongodb-deploy/cluster_t2/configsvr'],

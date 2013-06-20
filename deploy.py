@@ -61,10 +61,10 @@ def mongod_start(mongod, replset_name=''):
         return 
     _copy_files(mongod)
     if replset_name:
-        cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongod -f ./conf/mongod.conf --port %d --replSet %s --fork "' % (config.USER, host, path, port, replset_name)
+        cmd = 'ssh -n -f %s@%s "cd %s ; numactl --interleave=all ./bin/mongod -f ./conf/mongod.conf --port %d --replSet %s --fork "' % (config.USER, host, path, port, replset_name)
         print _system(cmd)
     else:
-        cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongod -f ./conf/mongod.conf --port %d --fork "' % (config.USER, host, path, port)
+        cmd = 'ssh -n -f %s@%s "cd %s ; numactl --interleave=all ./bin/mongod -f ./conf/mongod.conf --port %d --fork "' % (config.USER, host, path, port)
         print _system(cmd)
 
 def mongod_ps(mongod):
@@ -174,7 +174,7 @@ def mongos_start(mongos, configdb):
 
     _copy_files(mongos)
 
-    cmd = 'ssh -n -f %s@%s "cd %s ; ./bin/mongos --configdb %s --logpath ./log/mongod.log --port %d --fork "' % (config.USER, host, path, configdb, port)
+    cmd = 'ssh -n -f %s@%s "cd %s ; numactl --interleave=all ./bin/mongos --configdb %s --logpath ./log/mongod.log --port %d --fork "' % (config.USER, host, path, configdb, port)
     print _system(cmd)
 
 def mongos_ps(mongos, configdb):
