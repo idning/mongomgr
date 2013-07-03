@@ -127,7 +127,7 @@ cluster_t2 = {
     'user' : 'rd',
     'auth' : {                  # only for sharding
         'user': 'structure', 
-        'password': 'PcSmongoPcs', 
+        'password': 'PcSmongoPcS', 
     },
     'configserver': [
         # host,  port, install path
@@ -160,3 +160,4 @@ cluster_t2 = {
         },
     ]
 }
+
