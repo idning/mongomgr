@@ -299,7 +299,7 @@ def _sharding_start(sharding, auth):
                 return 
             #warning(str(e))
             warning('add shard return error with: \n' + str(e))
-            raise e
+            #raise e
 
 
     for shard in sharding['shard']:

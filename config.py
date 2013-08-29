@@ -63,12 +63,12 @@ cluster_10 = {
 
 
 # hide it
-cluster_j = {
+cluster_jomo = {
     'type' : 'sharding',
     'user' : 'bae',
     'configserver': [
         # host,  port, install path
-        ['10.42.42.58', 7222, '/home/bae/configsvr'],
+        ['10.46.190.58', 7222, '/home/bae/configsvr'],
     ],
     'mongos': [
         # host,  port, install path
@@ -79,9 +79,17 @@ cluster_j = {
             'type' : 'mongod',
             'server': ['10.46.190.58', 7111, '/home/bae/mongod'],
         },
+        #{ # shard 2 @ jomo-0
+            #'type' : 'mongod', 
+            #'server': ['10.42.42.58',  7111, '/home/bae/mongod'],
+        #},
         { # shard 2
             'type' : 'mongod',
-            'server': ['10.42.42.58',  7111, '/home/bae/mongod'],
+            'server': ['10.26.140.32',  7111, '/home/bae/mongod'],
+        },
+        { # shard 2
+            'type' : 'mongod',
+            'server': ['10.26.138.25',  7111, '/home/bae/mongod'],
         },
     ]
 }
@@ -122,7 +130,7 @@ cluster_test = {
     ]
 }
 
-cluster_t2 = {
+cluster_mig = {
     'type' : 'sharding',
     'user' : 'rd',
     'auth' : {                  # only for sharding
@@ -143,7 +151,7 @@ cluster_t2 = {
             'replset_name' : 'set_test_1',
             'mongod': [
                 # host,  port, install path
-                ['10.65.16.245', 37111, '/home/rd/mongodb-deploy/cluster_t2/mongodb-37111'],
+                ['10.65.16.245', 37111, '/home/rd/mongodb-deploy/cluster_t2/mongodb-37111'], #jx-bae-bcs0.jx.baidu.com
                 ['10.65.19.52', 37111, '/home/rd/mongodb-deploy/cluster_t2/mongodb-37111'],
                 ['10.65.19.26', 37111, '/home/rd/mongodb-deploy/cluster_t2/mongodb-37111'],
             ]
