@@ -6,7 +6,7 @@
 
 
 #the downloaded mongodb-static-legacy path
-MONGO_DB_PATH = '/home/yanglin/soft_packages/mongodb-linux-x86_64-static-legacy-2.0.6/'
+MONGO_DB_PATH = '/home/yanglin/soft_packages/mongodb-pcs-2.2.4/'
 
 # user account in target machine
 
@@ -151,7 +151,7 @@ cluster_mig = {
             'replset_name' : 'set_test_1',
             'mongod': [
                 # host,  port, install path
-                ['10.65.16.245', 37111, '/home/rd/mongodb-deploy/cluster_t2/mongodb-37111'], #jx-bae-bcs0.jx.baidu.com
+                ['10.65.16.245', 37111, '/home/rd/mongodb-deploy/cluster_t2/mongodb-37111'], 
                 ['10.65.19.52', 37111, '/home/rd/mongodb-deploy/cluster_t2/mongodb-37111'],
                 ['10.65.19.26', 37111, '/home/rd/mongodb-deploy/cluster_t2/mongodb-37111'],
             ]

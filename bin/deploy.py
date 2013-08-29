@@ -7,7 +7,6 @@
 import urllib, urllib2, httplib, os, re, sys, time, logging, hmac, base64, commands, glob
 import json
 import argparse
-import config
 import socket
 
 from pcl import common
@@ -16,12 +15,10 @@ PWD = os.path.dirname(os.path.realpath(__file__))
 WORKDIR = os.path.join(PWD,  '../')
 LOGPATH = os.path.join(WORKDIR, 'log/deploy.log')
 
-print WORKDIR
-print LOGPATH
+sys.path.append(os.path.join(WORKDIR, 'lib/'))
+sys.path.append(os.path.join(WORKDIR, 'conf/'))
 
-
-sys.path.append(os.path.join(WORKDIR, '../lib/'))
-
+import deploy_conf as conf
 
 class TmpFile:
     def __init__(self, tmp_dir = './tmp/'):
@@ -54,32 +51,43 @@ def _remote_run(user, host, raw_cmd):
     return common.system(cmd, logging.info)
 
 def _init():
-    common.system('rm -rf ./mongodb-base', logging.debug)
-    common.system('cp -rf %s ./mongodb-base' % config.MONGO_DB_PATH, logging.debug)
+    #common.system('rm -rf ./mongodb-base', logging.debug)
+
+    common.system('mkdir -p ./mongodb-base/bin', logging.debug)
     common.system('mkdir -p ./mongodb-base/conf', logging.debug)
     common.system('mkdir -p ./mongodb-base/log', logging.debug)
     common.system('mkdir -p ./mongodb-base/db', logging.debug)
+
+    common.system('cp -u %s/bin/mongo ./mongodb-base/bin' % conf.MONGO_DB_PATH, logging.debug)
+    common.system('cp -u %s/bin/mongostat ./mongodb-base/bin' % conf.MONGO_DB_PATH, logging.debug)
+    common.system('cp -u %s/bin/mongod ./mongodb-base/bin' % conf.MONGO_DB_PATH, logging.debug)
+    common.system('cp -u %s/bin/mongos ./mongodb-base/bin' % conf.MONGO_DB_PATH, logging.debug)
+
     common.system('cp mongod.conf ./mongodb-base/conf', logging.debug)
 
 def _alive(mongod, auth=None):
+    #logging.debug("alive %s %s" % (mongod, auth) )
     [host, port, path] = mongod
     cmd = 'mongostat --host %s --port %s -n1 ' % (host, port)
     if auth:
-        tmp = '-u %s -p %s ' % (auth['user'], auth['password'])
+        tmp = '-u %s -p %s ' % ('__system', auth['password'])
         cmd += tmp
 
-    r = common.system(cmd, logging.info)
+    r = common.system(cmd, logging.debug)
     if r.find('insert') >= 0:
-        return True
-    return False
+        alive = True
+    else:
+        alive = False
+    logging.info("%s alive = %s" % (mongod, alive))
+    return alive
     
 def _copy_files(mongod):
     [host, port, path] = mongod
 
     cmd = 'mkdir -p %s ' % path
-    _remote_run(config.USER, host, cmd)
+    _remote_run(conf.USER, host, cmd)
 
-    cmd = 'rsync -avP ./mongodb-base/ %s@%s:%s 1>/dev/null 2>/dev/null' % (config.USER, host, path)
+    cmd = 'rsync -avP ./mongodb-base/ %s@%s:%s 1>/dev/null 2>/dev/null' % (conf.USER, host, path)
     common.system(cmd, logging.debug)
 
 def _run_js(host, port, js, auth=None):
@@ -88,12 +96,12 @@ def _run_js(host, port, js, auth=None):
 
     cmd = './mongodb-base/bin/mongo %s:%d/admin ' % (host, port)
     if auth:
-        tmp = '-u %s -p %s ' % (auth['user'], auth['password'])
+        tmp = '-u %s -p %s ' % ('__system', auth['password'])
         cmd += tmp
     cmd += filename
 
     rst = common.system(cmd, logging.info)
-    if rst.find('command failed') >=0:
+    if rst.find('command failed') >=0 or rst.find('uncaught exception') >=0:
         raise Exception('run js error: \n' + rst)
     logging.info(rst)
 
@@ -101,7 +109,7 @@ def _run_js(host, port, js, auth=None):
 def mongod_start(mongod, replset_name='', auth=None):
     [host, port, path] = mongod
 
-    if _alive(mongod):
+    if _alive(mongod, auth):
         logging.info(' %s already alive:  we do nothing!' % mongod)
         return 
     cmd = 'cd %s && numactl --interleave=all ./bin/mongod -f ./conf/mongod.conf --port %d --fork ' % (path, port)
@@ -115,33 +123,39 @@ def mongod_start(mongod, replset_name='', auth=None):
         cmd += tmp
 
     _copy_files(mongod)
-    r = _remote_run(config.USER, host, cmd)
-    logging.info(r)
+    r = _remote_run(conf.USER, host, cmd)
+    logging.debug(r)
+    if r.find('forked process') == -1:
+        raise Exception("%s mongod start Fail" % mongod)
+    if not _alive(mongod, auth):
+        logging.warning("%s start Fail" % mongod)
+
+    logging.info("%s start Success" % mongod)
 
 def mongod_ps(mongod):
     host, port, path = mongod
     cmd = 'pgrep -l -f \'./bin/mongod -f ./conf/mongod.conf --port %d \'' % (port, )
-    print _remote_run(config.USER, host, cmd)
+    print _remote_run(conf.USER, host, cmd)
 
 def mongod_stop(mongod):
     host, port, path = mongod
     cmd = 'cd %s ; ./bin/mongod -f ./conf/mongod.conf --port %d --shutdown' % (path, port)
-    print _remote_run(config.USER, host, cmd)
+    print _remote_run(conf.USER, host, cmd)
 
 def mongod_kill(mongod):
     host, port, path = mongod
     cmd = 'pkill -9 -f \'./bin/mongod -f ./conf/mongod.conf --port %d \'' % (port, )
-    print _remote_run(config.USER, host, cmd)
+    print _remote_run(conf.USER, host, cmd)
 
 def mongod_log(mongod):
     [host, port, path] = mongod
     cmd = 'cd %s ; tail -20 log/mongod.log' % (path, )
-    print _remote_run(config.USER, host, cmd)
+    print _remote_run(conf.USER, host, cmd)
 
 def mongod_clean(mongod):
     [host, port, path] = mongod
     cmd = 'rm -rf %s ' % (path)
-    print _remote_run(config.USER, host, cmd)
+    print _remote_run(conf.USER, host, cmd)
 
 
 ############# replset op
@@ -162,12 +176,19 @@ rs.initiate(config);
 ''' % json.dumps(replset_config)
     if auth:
         tmp = 'db.addUser("%s", "%s");' % (auth['user'], auth['password'])
-        js += tmp
+        #js += tmp
     
     primary = replset['mongod'][0]
     ip = socket.gethostbyname(primary[0])
     port = primary[1]
-    _run_js(ip, port, js)
+    if auth:
+        tmp_auth = {
+            'user': '__system',
+            'password': auth['password'],
+        }
+    else:
+        tmp_auth = None
+    _run_js(ip, port, js, tmp_auth)
 
     logging.info( 'see http://%s:%d/_replSet' % (primary[0], 1000+primary[1]) )
 
@@ -175,7 +196,7 @@ rs.initiate(config);
 def replset_ps(replset):
     for host, port, path in  replset['mongod']:
         cmd = 'pgrep -l -f \'./bin/mongod -f ./conf/mongod.conf --port %d \'' % (port, )
-        print _remote_run(config.USER, host, cmd)
+        print _remote_run(conf.USER, host, cmd)
 
 def replset_log(replset):
     for mongod in  replset['mongod']:
@@ -207,19 +228,19 @@ def configserver_start(configserver, auth):
         tmp =  '--keyFile=%s/conf/mongokey ' % path
         cmd += tmp
     _copy_files(configserver)
-    print _remote_run(config.USER, host, cmd)
+    print _remote_run(conf.USER, host, cmd)
 
 def configserver_ps(configserver):
     [host, port, path] = configserver
 
     cmd = '''pgrep -l -f './bin/mongod --configsvr --dbpath ./db --logpath ./log/mongod.log --port %d --fork' ''' % (port, )
-    print _remote_run(config.USER, host, cmd)
+    print _remote_run(conf.USER, host, cmd)
 
 def configserver_kill(configserver):
     [host, port, path] = configserver
 
     cmd = '''pkill -f './bin/mongod --configsvr --dbpath ./db --logpath ./log/mongod.log --port %d --fork' ''' % (port, )
-    print _remote_run(config.USER, host, cmd)
+    print _remote_run(conf.USER, host, cmd)
 
 ############# mongos op
 def mongos_start(mongos, configdb, auth):
@@ -236,54 +257,54 @@ def mongos_start(mongos, configdb, auth):
         cmd += tmp
 
     _copy_files(mongos)
-    print _remote_run(config.USER, host, cmd)
+    print _remote_run(conf.USER, host, cmd)
 
 def mongos_ps(mongos, configdb):
     [host, port, path] = mongos
 
     cmd = '''pgrep -l -f  './bin/mongos --configdb %s --logpath ./log/mongod.log --port %d --fork' ''' % (configdb, port)
-    print _remote_run(config.USER, host, cmd)
+    print _remote_run(conf.USER, host, cmd)
 
 def mongos_kill(mongos, configdb):
     [host, port, path] = mongos
 
     cmd = '''pkill -f  './bin/mongos --configdb %s --logpath ./log/mongod.log --port %d --fork' ''' % (configdb, port)
-    print _remote_run(config.USER, host, cmd)
+    print _remote_run(conf.USER, host, cmd)
 
 ############# sharding op
 def _sharding_status(sharding, auth):
     [ip, port, path] = sharding['mongos'][0]
     _run_js(ip, port, 'sh.status()', auth)
 
-def sharding_start(sharding):
-    if 'auth' in sharding:
-        auth = sharding['auth']
-        #1. start with no auth
-        _sharding_start(sharding, None)
-        #2. add user 
-        [ip, port, path] = sharding['mongos'][0]
-        tmp = 'db.addUser("%s", "%s");' % (auth['user'], auth['password'])
-        _run_js(ip, port, tmp)
-        #3. restart with auth
-        sharding_kill(sharding)
+#def sharding_start(sharding):
+    #if 'auth' in sharding:
+        #auth = sharding['auth']
+        ##1. start with no auth
+        #_sharding_start(sharding, None)
+        ##2. add user 
+        #[ip, port, path] = sharding['mongos'][0]
+        #tmp = 'db.addUser("%s", "%s");' % (auth['user'], auth['password'])
+        #_run_js(ip, port, tmp)
+        ##3. restart with auth
+        #sharding_kill(sharding)
 
-        _sharding_start(sharding, sharding['auth'])
-    else:
-        _sharding_start(sharding, None)
+        #_sharding_start(sharding, sharding['auth'])
+    #else:
+        #_sharding_start(sharding, None)
     
-def _sharding_start(sharding, auth):
+def sharding_start(sharding):
+    auth = sharding['auth']
     configdb = ['%s:%d' % (i[0], i[1]) for i in sharding['configserver']]
     configdb = ','.join(configdb)
 
-
-    logging.info('............. start shard ')
+    logging.notice('............. start shard ')
     for shard in sharding['shard']:
         if shard['type'] == 'replset':
             replset_start(shard, auth)
         elif shard['type'] == 'mongod':
             mongod_start(shard['server'], auth=auth)
 
-    logging.info('............. start configserver ')
+    logging.notice('............. start configserver ')
     ##a hack, we add user/pass auth on configserver . 
     ##doit with noauth
     #for configserver in sharding['configserver']:
@@ -297,11 +318,11 @@ def _sharding_start(sharding, auth):
     for configserver in sharding['configserver']:
         configserver_start(configserver, auth)
 
-    logging.info('............. start mongos ')
+    logging.notice('............. start mongos ')
     for mongos in sharding['mongos']:
         mongos_start(mongos, configdb, auth)
 
-    @retry(Exception, tries=2)
+    @common.retry(Exception, tries=2)
     def add_shard(shard):
         if shard['type'] == 'replset':
             members = ['%s:%d'%(host,port) for (id, (host, port, path)) in enumerate(shard['mongod'])]
@@ -330,7 +351,7 @@ def _sharding_start(sharding, auth):
                 logging.warning('shard already added !!!')
                 return 
             #warning(str(e))
-            warning('add shard return error with: \n' + str(e))
+            logging.warning('add shard return error with: \n' + str(e))
             #raise e
 
 
@@ -425,7 +446,7 @@ def discover_op():
     return sets
 
 def discover_cluster():
-    sets = [s for s in dir(config) if s.startswith('cluster')]
+    sets = [s for s in dir(conf) if s.startswith('cluster')]
     return sets
 
 def parse_args():
@@ -434,15 +455,15 @@ def parse_args():
         help='start/stop/clean mongodb/replset/sharding-cluster')
 
     parser.add_argument('target', choices=discover_cluster(), help='replset target ')
-    args = common.parse_args2('log/deploy.log', )
+    args = common.parse_args2(LOGPATH, parser)
 
     _init()
 
-    cluster = eval('config.%s' % args.target)
+    cluster = eval('conf.%s' % args.target)
     func = eval('%s_%s' % (cluster['type'], args.op) )
-    config.USER = cluster['user']
+    conf.USER = cluster['user']
     func(cluster)
-    #eval('%s_%s(config.%s)' % (, args.target))
+    #eval('%s_%s(conf.%s)' % (, args.target))
 
 if __name__ == "__main__":
     parse_args()
