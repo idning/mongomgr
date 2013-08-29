@@ -4,39 +4,71 @@
 #author : ning
 #date   : 2012-08-24 06:26:25
 
-
 import urllib, urllib2, httplib, os, re, sys, time, logging, hmac, base64, commands, glob
 import json
-from common import *
 import argparse
 import config
 import socket
 
-def _system(cmd, log=False):
-    if log:
-        info(cmd)
-    return system(cmd)
+from pcl import common
+
+PWD = os.path.dirname(os.path.realpath(__file__))
+WORKDIR = os.path.join(PWD,  '../')
+LOGPATH = os.path.join(WORKDIR, 'log/deploy.log')
+
+print WORKDIR
+print LOGPATH
+
+
+sys.path.append(os.path.join(WORKDIR, '../lib/'))
+
+
+class TmpFile:
+    def __init__(self, tmp_dir = './tmp/'):
+        self.tmp_dir = tmp_dir
+
+        if not os.path.exists(tmp_dir):
+            os.makedirs(tmp_dir, mode=0777) 
+            os.chmod(tmp_dir, 0777)
+
+    def random_tmp_file(self, key):
+        from datetime import datetime
+        name = str(datetime.now())
+        name = name.replace(' ', '_')
+        name = name.replace(':', '_')
+        name = name.replace('.', '_')
+        return self.tmp_dir + key + name
+
+    def content_to_tmpfile(self, content):
+        tmp_file = self.random_tmp_file('_')
+        f = file(tmp_file, 'wb')
+        f.write(content)
+        f.close()
+        return tmp_file
 
 def _remote_run(user, host, raw_cmd):
     if raw_cmd.find('"') >= 0:
         error('bad cmd: ' + raw_cmd)
         return
     cmd = 'ssh -n -f %s@%s "%s"' % (user, host, raw_cmd)
-    return _system(cmd, log=True)
+    return common.system(cmd, logging.info)
 
 def _init():
-    _system('rm -rf ./mongodb-base')
-    _system('cp -rf %s ./mongodb-base' % config.MONGO_DB_PATH)
-    _system('mkdir -p ./mongodb-base/conf')
-    _system('mkdir -p ./mongodb-base/log')
-    _system('mkdir -p ./mongodb-base/db')
-    _system('cp mongod.conf ./mongodb-base/conf')
+    common.system('rm -rf ./mongodb-base', logging.debug)
+    common.system('cp -rf %s ./mongodb-base' % config.MONGO_DB_PATH, logging.debug)
+    common.system('mkdir -p ./mongodb-base/conf', logging.debug)
+    common.system('mkdir -p ./mongodb-base/log', logging.debug)
+    common.system('mkdir -p ./mongodb-base/db', logging.debug)
+    common.system('cp mongod.conf ./mongodb-base/conf', logging.debug)
 
-def _alive(mongod):
+def _alive(mongod, auth=None):
     [host, port, path] = mongod
+    cmd = 'mongostat --host %s --port %s -n1 ' % (host, port)
+    if auth:
+        tmp = '-u %s -p %s ' % (auth['user'], auth['password'])
+        cmd += tmp
 
-    cmd = 'mongostat --host %s --port %s -n1' % (host, port)
-    r = _system(cmd)
+    r = common.system(cmd, logging.info)
     if r.find('insert') >= 0:
         return True
     return False
@@ -48,10 +80,10 @@ def _copy_files(mongod):
     _remote_run(config.USER, host, cmd)
 
     cmd = 'rsync -avP ./mongodb-base/ %s@%s:%s 1>/dev/null 2>/dev/null' % (config.USER, host, path)
-    _system(cmd)
+    common.system(cmd, logging.debug)
 
 def _run_js(host, port, js, auth=None):
-    print 'run_js: \n', js
+    logging.info('run_js: \n' + js)
     filename = TmpFile().content_to_tmpfile(js)
 
     cmd = './mongodb-base/bin/mongo %s:%d/admin ' % (host, port)
@@ -60,17 +92,17 @@ def _run_js(host, port, js, auth=None):
         cmd += tmp
     cmd += filename
 
-    rst = _system(cmd, log=True)
+    rst = common.system(cmd, logging.info)
     if rst.find('command failed') >=0:
         raise Exception('run js error: \n' + rst)
-    print rst
+    logging.info(rst)
 
 ############# mongod op
 def mongod_start(mongod, replset_name='', auth=None):
     [host, port, path] = mongod
 
     if _alive(mongod):
-        print 'already alive:  we do nothing!'
+        logging.info(' %s already alive:  we do nothing!' % mongod)
         return 
     cmd = 'cd %s && numactl --interleave=all ./bin/mongod -f ./conf/mongod.conf --port %d --fork ' % (path, port)
 
@@ -78,12 +110,13 @@ def mongod_start(mongod, replset_name='', auth=None):
         tmp =  '--replSet %s ' % replset_name
         cmd += tmp
     if auth:
-        _system('echo "%s" > ./mongodb-base/conf/mongokey && chmod 700 ./mongodb-base/conf/mongokey' % auth['password'])
+        common.system('echo "%s" > ./mongodb-base/conf/mongokey && chmod 700 ./mongodb-base/conf/mongokey' % auth['password'], logging.debug)
         tmp =  '--keyFile=%s/conf/mongokey ' % path
         cmd += tmp
 
     _copy_files(mongod)
-    print _remote_run(config.USER, host, cmd)
+    r = _remote_run(config.USER, host, cmd)
+    logging.info(r)
 
 def mongod_ps(mongod):
     host, port, path = mongod
@@ -136,7 +169,7 @@ rs.initiate(config);
     port = primary[1]
     _run_js(ip, port, js)
 
-    print_green( 'see http://%s:%d/_replSet' % (primary[0], 1000+primary[1]) )
+    logging.info( 'see http://%s:%d/_replSet' % (primary[0], 1000+primary[1]) )
 
 
 def replset_ps(replset):
@@ -164,14 +197,13 @@ def replset_clean(replset):
 def configserver_start(configserver, auth):
     [host, port, path] = configserver
 
-    if _alive(configserver):
-        print 'already alive:  we do nothing!'
+    if _alive(configserver, auth):
+        logging.info('%s already alive:  we do nothing!' % configserver)
         return 
-
 
     cmd = 'cd %s ; ./bin/mongod --configsvr --dbpath ./db --logpath ./log/mongod.log --port %d --fork ' % (path, port)
     if auth:
-        _system('echo "%s" > ./mongodb-base/conf/mongokey && chmod 700 ./mongodb-base/conf/mongokey' % auth['password'])
+        common.system('echo "%s" > ./mongodb-base/conf/mongokey && chmod 700 ./mongodb-base/conf/mongokey' % auth['password'], logging.debug)
         tmp =  '--keyFile=%s/conf/mongokey ' % path
         cmd += tmp
     _copy_files(configserver)
@@ -193,13 +225,13 @@ def configserver_kill(configserver):
 def mongos_start(mongos, configdb, auth):
     [host, port, path] = mongos
 
-    if _alive(mongos):
-        print 'already alive:  we do nothing!'
+    if _alive(mongos, auth):
+        logging.info('%s already alive:  we do nothing!' % mongos)
         return 
 
     cmd = 'cd %s ; numactl --interleave=all ./bin/mongos --configdb %s --logpath ./log/mongod.log --port %d --fork ' % (path, configdb, port)
     if auth:
-        _system('echo "%s" > ./mongodb-base/conf/mongokey && chmod 700 ./mongodb-base/conf/mongokey' % auth['password'])
+        common.system('echo "%s" > ./mongodb-base/conf/mongokey && chmod 700 ./mongodb-base/conf/mongokey' % auth['password'], logging.debug)
         tmp =  '--keyFile=%s/conf/mongokey ' % path
         cmd += tmp
 
@@ -244,14 +276,14 @@ def _sharding_start(sharding, auth):
     configdb = ','.join(configdb)
 
 
-    print_blue('............. start shard ')
+    logging.info('............. start shard ')
     for shard in sharding['shard']:
         if shard['type'] == 'replset':
             replset_start(shard, auth)
         elif shard['type'] == 'mongod':
             mongod_start(shard['server'], auth=auth)
 
-    print_blue('............. start configserver ')
+    logging.info('............. start configserver ')
     ##a hack, we add user/pass auth on configserver . 
     ##doit with noauth
     #for configserver in sharding['configserver']:
@@ -265,7 +297,7 @@ def _sharding_start(sharding, auth):
     for configserver in sharding['configserver']:
         configserver_start(configserver, auth)
 
-    print_blue('............. start mongos ')
+    logging.info('............. start mongos ')
     for mongos in sharding['mongos']:
         mongos_start(mongos, configdb, auth)
 
@@ -292,10 +324,10 @@ def _sharding_start(sharding, auth):
             _run_js(ip, port, js, auth)
         except Exception as e: 
             if str(e).find('E11000 duplicate key error index: config.shards.$_id_') >= 0:
-                print 'shard already added !!!'
+                logging.warning('shard already added !!!')
                 return 
             if str(e).find('host already used') >= 0:
-                print 'shard already added !!!'
+                logging.warning('shard already added !!!')
                 return 
             #warning(str(e))
             warning('add shard return error with: \n' + str(e))
@@ -399,13 +431,12 @@ def discover_cluster():
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('op', choices=discover_op(), 
-        help='start/stop/clean mongodb replset cluster')
+        help='start/stop/clean mongodb/replset/sharding-cluster')
 
     parser.add_argument('target', choices=discover_cluster(), help='replset target ')
-    args = parser.parse_args()
+    args = common.parse_args2('log/deploy.log', )
 
     _init()
-    print args
 
     cluster = eval('config.%s' % args.target)
     func = eval('%s_%s' % (cluster['type'], args.op) )
