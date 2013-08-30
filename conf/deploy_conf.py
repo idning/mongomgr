@@ -132,10 +132,11 @@ cluster_test = {
 
 cluster_mig = {
     'type' : 'sharding',
-    'user' : 'rd',
+    'user' : 'rd',              # linux user
     'auth' : {                  # only for sharding
-        'user': 'structure', 
-        'password': 'PcSmongoPcS', 
+        'user': 'structure',            # we will add this user at last
+        'password': 'PcSmongoPcS',      # 
+        'key':      'PcSmongoPcS',      # keyfile auth (the __system password)
     },
     'configserver': [
         # host,  port, install path

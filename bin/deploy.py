@@ -63,14 +63,14 @@ def _init():
     common.system('cp -u %s/bin/mongod ./mongodb-base/bin' % conf.MONGO_DB_PATH, logging.debug)
     common.system('cp -u %s/bin/mongos ./mongodb-base/bin' % conf.MONGO_DB_PATH, logging.debug)
 
-    common.system('cp mongod.conf ./mongodb-base/conf', logging.debug)
+    common.system('cp conf/mongod.conf ./mongodb-base/conf', logging.debug)
 
 def _alive(mongod, auth=None):
     #logging.debug("alive %s %s" % (mongod, auth) )
     [host, port, path] = mongod
     cmd = 'mongostat --host %s --port %s -n1 ' % (host, port)
     if auth:
-        tmp = '-u %s -p %s ' % ('__system', auth['password'])
+        tmp = '-u %s -p %s ' % ('__system', auth['key'])
         cmd += tmp
 
     r = common.system(cmd, logging.debug)
@@ -91,12 +91,12 @@ def _copy_files(mongod):
     common.system(cmd, logging.debug)
 
 def _run_js(host, port, js, auth=None):
-    logging.info('run_js: \n' + js)
+    logging.info('run_js: \n' + js.replace(' ', '').replace('\n', '  '))
     filename = TmpFile().content_to_tmpfile(js)
 
     cmd = './mongodb-base/bin/mongo %s:%d/admin ' % (host, port)
     if auth:
-        tmp = '-u %s -p %s ' % ('__system', auth['password'])
+        tmp = '-u %s -p %s ' % ('__system', auth['key'])
         cmd += tmp
     cmd += filename
 
@@ -118,7 +118,7 @@ def mongod_start(mongod, replset_name='', auth=None):
         tmp =  '--replSet %s ' % replset_name
         cmd += tmp
     if auth:
-        common.system('echo "%s" > ./mongodb-base/conf/mongokey && chmod 700 ./mongodb-base/conf/mongokey' % auth['password'], logging.debug)
+        common.system('echo "%s" > ./mongodb-base/conf/mongokey && chmod 700 ./mongodb-base/conf/mongokey' % auth['key'], logging.debug)
         tmp =  '--keyFile=%s/conf/mongokey ' % path
         cmd += tmp
 
@@ -181,14 +181,7 @@ rs.initiate(config);
     primary = replset['mongod'][0]
     ip = socket.gethostbyname(primary[0])
     port = primary[1]
-    if auth:
-        tmp_auth = {
-            'user': '__system',
-            'password': auth['password'],
-        }
-    else:
-        tmp_auth = None
-    _run_js(ip, port, js, tmp_auth)
+    _run_js(ip, port, js, auth)
 
     logging.info( 'see http://%s:%d/_replSet' % (primary[0], 1000+primary[1]) )
 
@@ -224,7 +217,7 @@ def configserver_start(configserver, auth):
 
     cmd = 'cd %s ; ./bin/mongod --configsvr --dbpath ./db --logpath ./log/mongod.log --port %d --fork ' % (path, port)
     if auth:
-        common.system('echo "%s" > ./mongodb-base/conf/mongokey && chmod 700 ./mongodb-base/conf/mongokey' % auth['password'], logging.debug)
+        common.system('echo "%s" > ./mongodb-base/conf/mongokey && chmod 700 ./mongodb-base/conf/mongokey' % auth['key'], logging.debug)
         tmp =  '--keyFile=%s/conf/mongokey ' % path
         cmd += tmp
     _copy_files(configserver)
@@ -252,7 +245,7 @@ def mongos_start(mongos, configdb, auth):
 
     cmd = 'cd %s ; numactl --interleave=all ./bin/mongos --configdb %s --logpath ./log/mongod.log --port %d --fork ' % (path, configdb, port)
     if auth:
-        common.system('echo "%s" > ./mongodb-base/conf/mongokey && chmod 700 ./mongodb-base/conf/mongokey' % auth['password'], logging.debug)
+        common.system('echo "%s" > ./mongodb-base/conf/mongokey && chmod 700 ./mongodb-base/conf/mongokey' % auth['key'], logging.debug)
         tmp =  '--keyFile=%s/conf/mongokey ' % path
         cmd += tmp
 
@@ -276,22 +269,6 @@ def _sharding_status(sharding, auth):
     [ip, port, path] = sharding['mongos'][0]
     _run_js(ip, port, 'sh.status()', auth)
 
-#def sharding_start(sharding):
-    #if 'auth' in sharding:
-        #auth = sharding['auth']
-        ##1. start with no auth
-        #_sharding_start(sharding, None)
-        ##2. add user 
-        #[ip, port, path] = sharding['mongos'][0]
-        #tmp = 'db.addUser("%s", "%s");' % (auth['user'], auth['password'])
-        #_run_js(ip, port, tmp)
-        ##3. restart with auth
-        #sharding_kill(sharding)
-
-        #_sharding_start(sharding, sharding['auth'])
-    #else:
-        #_sharding_start(sharding, None)
-    
 def sharding_start(sharding):
     auth = sharding['auth']
     configdb = ['%s:%d' % (i[0], i[1]) for i in sharding['configserver']]
@@ -305,15 +282,6 @@ def sharding_start(sharding):
             mongod_start(shard['server'], auth=auth)
 
     logging.notice('............. start configserver ')
-    ##a hack, we add user/pass auth on configserver . 
-    ##doit with noauth
-    #for configserver in sharding['configserver']:
-        #configserver_start(configserver, None)
-
-        #[ip, port, path] = configserver
-        #tmp = 'db.addUser("%s", "%s");' % (auth['user'], auth['password'])
-        #_run_js(ip, port, tmp)
-        #configserver_kill(configserver)
 
     for configserver in sharding['configserver']:
         configserver_start(configserver, auth)
@@ -350,9 +318,7 @@ def sharding_start(sharding):
             if str(e).find('host already used') >= 0:
                 logging.warning('shard already added !!!')
                 return 
-            #warning(str(e))
             logging.warning('add shard return error with: \n' + str(e))
-            #raise e
 
 
     for shard in sharding['shard']:
