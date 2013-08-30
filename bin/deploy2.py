@@ -46,12 +46,6 @@ class TmpFile:
         f.close()
         return tmp_file
 
-def _remote_run(user, host, raw_cmd):
-    if raw_cmd.find('"') >= 0:
-        error('bad cmd: ' + raw_cmd)
-        return
-    cmd = 'ssh -n -f %s@%s "%s"' % (user, host, raw_cmd)
-    return common.system(cmd, logging.info)
 
 def _init():
     #common.system('rm -rf ./mongodb-base', logging.debug)
@@ -91,29 +85,21 @@ class Mongod(Base):
     '''
     for mongod, mongos, configserver
     '''
-    def __init__(self, host, port, ssh_user, path, auth):
-        self.host = host
-        self.port = port
-        self.ssh_user = ssh_user
-        self.path = path
-        self.auth = auth
+    def __init__(self, args):
+        args['role'] = self.__class__.__name__
+        args['user'] = args['auth']['user']
+        args['password'] = args['auth']['password']
+        args['key'] = args['auth']['key']
 
-    def _vars(self):
-        return {
-            'role': type(self),
-            'host': self.host,
-            'port': self.port,
-            'ssh_user': self.ssh_user,
-            'path': self.path,
-            'user': self.auth['user'],
-            'password': self.auth['password'],
-            'key': self.auth['key'],
-        }
+        self.args = args
+
+        self.args['startcmd'] = './bin/mongod -f ./conf/mongod.conf --port %(port)d --fork --keyFile=%(path)s/conf/mongokey' % self.args
+
     def __str__(self):
-        return '[%(role)s] %(host)s:%(port)s' % self._vars()
+        return '[%(role)s] [%(host)s:%(port)s]' % self.args
 
     def _alive(self):
-        cmd = 'mongostat --host %(host)s --port %(port)s -u __system -p %(key)s -n1 ' % self._vars()
+        cmd = 'mongostat --host %(host)s --port %(port)s -u __system -p %(key)s -n1 ' % self.args
         r = common.system(cmd, logging.debug)
         if r.find('insert') >= 0:
             alive = True
@@ -122,40 +108,71 @@ class Mongod(Base):
         logging.info("%s alive = %s" % (self, alive))
         return alive
 
-    def _copy_files(self):
-        cmd = 'mkdir -p %s ' % self.path
-        _remote_run(self.ssh_user, self.host, cmd)
+    def _remote_run(self, raw_cmd):
+        if raw_cmd.find('"') >= 0:
+            raise Exception('bad cmd: ' + raw_cmd)
+        cmd = 'ssh -n -f %s@%s "%s"' % (self.args['ssh_user'], self.args['host'], raw_cmd)
+        return common.system(cmd, logging.info)
 
-        cmd = 'rsync -avP ./mongodb-base/ %s@%s:%s 1>/dev/null 2>/dev/null' % (self.ssh_user, self.host, self.path)
+    def _copy_files(self):
+
+        cmd = 'echo "%(key)s" > ./mongodb-base/conf/mongokey && chmod 700 ./mongodb-base/conf/mongokey' % self.args
+        common.system(cmd, logging.debug)
+
+        cmd = 'mkdir -p %(path)s ' % self.args
+        self._remote_run(cmd)
+
+        cmd = 'rsync -avP ./mongodb-base/ %(ssh_user)s@%(host)s:%(path)s 1>/dev/null 2>/dev/null' % self.args
         common.system(cmd, logging.debug)
 
     def _run_js(self, js):
         logging.info('run_js: \n' + js.replace(' ', '').replace('\n', '  '))
         filename = TmpFile().content_to_tmpfile(js)
 
-        cmd = './mongodb-base/bin/mongo %(host)s:%(port)s/admin -u __system -p %(key)s' % self._vars()
+        cmd = './mongodb-base/bin/mongo %(host)s:%(port)s/admin -u __system -p %(key)s' % self.args
         r = common.system(cmd, logging.info)
         if r.find('command failed') >=0 or r.find('uncaught exception') >=0:
             raise Exception('run js error: \n' + r)
         logging.info(r)
 
     def start(self):
-        pass
+        if self._alive():
+            logging.info('%s already alive:  we do nothing!' % self)
+            return 
+
+        cmd = 'cd %(path)s && numactl --interleave=all %(startcmd)s ' % self.args
+
+        self._copy_files()
+        r = self._remote_run(cmd)
+        logging.debug(r)
+        if r.find('forked process') == -1:
+            raise Exception("%s mongod start Fail" % self)
+        if not self._alive():
+            raise Exception("%s mongod start Fail" % self)
+        logging.info("%s start Success" % self)
 
     def stop(self):
-        pass
+        cmd = 'cd %(path)s ; %(startcmd)s --shutdown' % self.args
+        print self._remote_run(cmd)
 
     def kill(self):
-        pass
+        cmd = 'pkill -9 -f \'%(startcmd)s\'' % self.args
+        print self._remote_run(cmd)
 
     def ps(self):
+        cmd = 'pgrep -f \'%(startcmd)s\'' % self.args
+        print self._remote_run(cmd)
         pass
 
     def log(self):
-        pass
+        cmd = 'cd %(path)s ; tail -20 log/mongod.log' % self.args
+        print self._remote_run(cmd)
 
     def clean(self):
-        pass
+        if self._alive():
+            raise Exception("%s is still running, we can't clean it" % self)
+        cmd = 'rm -rf %(path)s' % self.args
+        print self._remote_run(cmd)
 
 class Mongos(Mongod):
     pass
@@ -168,8 +185,6 @@ class Replset(Base):
 
 class Sharding(Base):
     pass
-
-
 
 def discover_op():
     import inspect
@@ -192,10 +207,7 @@ def parse_args():
     _init()
 
     cluster = eval('conf.%s' % args.target)
-    func = eval('%s_%s' % (cluster['type'], args.op) )
-    conf.USER = cluster['user']
-    func(cluster)
-    #eval('%s_%s(conf.%s)' % (, args.target))
+    eval('%s(%s).%s()' % (cluster['type'], cluster, args.op) )
 
 if __name__ == "__main__":
     parse_args()
