@@ -127,12 +127,12 @@ class Mongod(Base):
         common.system(cmd, logging.debug)
 
     def _runjs(self, js):
-        logging.info('_run_js: \n' + js.replace(' ', '').replace('\n', '  '))
+        logging.debug('_run_js: \n' + js.replace(' ', '').replace('\n', '  '))
         filename = TmpFile().content_to_tmpfile(js)
 
         cmd = './mongodb-base/bin/mongo %(host)s:%(port)s/admin -u __system -p %(key)s' % self.args 
         cmd += ' ' + filename
-        r = common.system(cmd, logging.info)
+        r = common.system(cmd, logging.debug)
         if r.find('command failed') >=0 or r.find('uncaught exception') >=0:
             raise Exception('run js error: \n' + r)
 
@@ -186,7 +186,7 @@ class Mongod(Base):
 class Replset(Base):
     '''
     replset: 
-        we should add user from primary
+        we should add user from primary, not every mongod
     '''
     def __init__(self, args):
         args['role'] = self.__class__.__name__
@@ -195,7 +195,7 @@ class Replset(Base):
         args['key'] = args['auth']['key']
 
         self.args = args
-        self.mongods = []
+        self.mongod_arr = []
         self.primary = None
 
         for host, port, path in self.args['mongod']:
@@ -208,14 +208,15 @@ class Replset(Base):
                 'port': port,
                 'path': path,
             }
-            self.mongods.append(mongod)
+            self.mongod_arr.append(mongod)
 
     def __str__(self):
         hosts = ','.join(['%s:%d' % (h, p) for h, p, _p in  self.args['mongod']])
-        return '[%(role)s] %(replset_name)s : ' + hosts
+        self.args['host'] = hosts
+        return '[%(role)s] [%(replset_name)s] [%(host)s]' % self.args 
 
     def _runjs(self, js, need_primary):
-        logging.info('_run_js: \n' + js.replace(' ', '').replace('\n', '  '))
+        logging.debug('_run_js: \n' + js.replace(' ', '').replace('\n', '  '))
         filename = TmpFile().content_to_tmpfile(js)
 
         if need_primary:
@@ -230,7 +231,7 @@ class Replset(Base):
 
         cmd = './mongodb-base/bin/mongo --quiet %(host)s:%(port)s/admin -u __system -p %(key)s' % locals()
         cmd += ' ' + filename
-        r = common.system(cmd, logging.info)
+        r = common.system(cmd, logging.debug)
         if r.find('command failed') >=0 or r.find('uncaught exception') >=0:
             raise Exception('run js error: \n' + r)
 
@@ -269,10 +270,10 @@ class Replset(Base):
             primary = self._get_primary()
             if primary:
                 break
-            logging.debug("waiting for rs.init")
+            logging.info("waiting for rs.init")
             time.sleep(3)
         
-        logging.info('primary is %s ' % primary)
+        logging.info('%s primary is: %s ' % (self, primary))
         host, port = primary.split(':')
         port = int(port) + 1000
         user = self.args['user']
@@ -284,30 +285,30 @@ class Replset(Base):
         self._runjs(js, need_primary=True)
 
     def start(self):
-        for mongod in self.mongods:
+        for mongod in self.mongod_arr:
             Mongod(mongod).start()
         self._rs_init()
         self._adduser()
 
     def stop(self):
-        for mongod in self.mongods:
+        for mongod in self.mongod_arr:
             Mongod(mongod).stop()
 
     def ps(self):
-        for mongod in self.mongods:
+        for mongod in self.mongod_arr:
             Mongod(mongod).ps()
         self._get_primary()
 
     def log(self):
-        for mongod in self.mongods:
+        for mongod in self.mongod_arr:
             Mongod(mongod).log()
 
     def kill(self):
-        for mongod in self.mongods:
+        for mongod in self.mongod_arr:
             Mongod(mongod).kill()
 
     def clean(self):
-        for mongod in self.mongods:
+        for mongod in self.mongod_arr:
             Mongod(mongod).clean()
 
 class Mongos(Mongod):
