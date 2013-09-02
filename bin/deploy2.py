@@ -106,14 +106,14 @@ class Mongod(Base):
             alive = True
         else:
             alive = False
-        logging.info("%s alive = %s" % (self, alive))
+        logging.debug("%s alive = %s" % (self, alive))
         return alive
 
     def _remote_run(self, raw_cmd):
         if raw_cmd.find('"') >= 0:
             raise Exception('bad cmd: ' + raw_cmd)
         cmd = 'ssh -n -f %s@%s "%s"' % (self.args['ssh_user'], self.args['host'], raw_cmd)
-        return common.system(cmd, logging.info)
+        return common.system(cmd, logging.debug)
 
     def _copy_files(self):
 
@@ -439,7 +439,7 @@ class Sharding(Base):
             self._do_addshard(shard)
 
         logging.notice('done!!')
-        self._runjs("sh.status()")
+        print common.shorten(self._runjs("sh.status()"), 1024)
 
         print "hint:"
         print "sh.enableSharding('db')"
@@ -472,6 +472,8 @@ def discover_cluster():
     return sets
 
 def parse_args():
+    sys.argv.insert(1, '-v') # auto -v
+    #print sys.argv
     parser = argparse.ArgumentParser()
     parser.add_argument('op', choices=discover_op(), 
         help='start/stop/clean mongodb/replset/sharding-cluster')
