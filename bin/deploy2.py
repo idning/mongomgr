@@ -378,6 +378,17 @@ class Sharding(Base):
             shard['auth'] = self.args['auth']
             self.shard_arr.append(shard)
 
+    def _do_at_all(self, cmd):
+        logging.notice("%s replset" % cmd)
+        for x in self.shard_arr:
+            eval('Replset(x).%s()' % cmd)
+        logging.notice("%s configserver" % cmd)
+        for x in self.configserver_arr:
+            eval('Configserver(x).%s()' % cmd)
+        logging.notice("%s mongos" % cmd)
+        for x in self.mongos_arr:
+            eval('Mongos(x).%s()' % cmd)
+
     def _runjs(self, js):
         logging.debug('_run_js: \n' + js.replace(' ', '').replace('\n', '  '))
         filename = TmpFile().content_to_tmpfile(js)
@@ -434,16 +445,6 @@ class Sharding(Base):
         print "sh.enableSharding('db')"
         print "sh.shardCollection('db.collection', {uuid:1})"
 
-    def _do_at_all(self, cmd):
-        logging.notice("%s replset" % cmd)
-        for x in self.shard_arr:
-            eval('Replset(x).%s()' % cmd)
-        logging.notice("%s configserver" % cmd)
-        for x in self.configserver_arr:
-            eval('Configserver(x).%s()' % cmd)
-        logging.notice("%s mongos" % cmd)
-        for x in self.mongos_arr:
-            eval('Mongos(x).%s()' % cmd)
 
     def stop(self):
         self._do_at_all('stop')
