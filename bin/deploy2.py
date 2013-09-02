@@ -297,7 +297,10 @@ class Replset(Base):
     def ps(self):
         for mongod in self.mongod_arr:
             Mongod(mongod).ps()
-        self._get_primary()
+        try:
+            self._get_primary()
+        except:
+            pass
 
     def log(self):
         for mongod in self.mongod_arr:
@@ -312,13 +315,150 @@ class Replset(Base):
             Mongod(mongod).clean()
 
 class Mongos(Mongod):
-    pass
+    '''
+    extra config:
+        configdb
+    '''
+    def __init__(self, args):
+        Mongod.__init__(self, args)
+
+        self.args['startcmd'] = './bin/mongos --configdb %(configdb)s --logpath ./log/mongod.log --port %(port)d --fork --keyFile=%(path)s/conf/mongokey' % self.args
+
+    def stop(self):
+        return self.kill() # not --shutdown for mongos
 
 class Configserver(Mongod):
-    pass
+    def __init__(self, args):
+        Mongod.__init__(self, args)
+
+        self.args['startcmd'] = './bin/mongod --configsvr --dbpath ./db --logpath ./log/mongod.log --port %(port)d --fork --keyFile=%(path)s/conf/mongokey' % self.args
 
 class Sharding(Base):
-    pass
+    def __init__(self, args):
+        args['role'] = self.__class__.__name__
+        args['user'] = args['auth']['user']
+        args['password'] = args['auth']['password']
+        args['key'] = args['auth']['key']
+
+        self.args = args
+        self.configserver_arr = []
+        self.mongos_arr = []
+        self.shard_arr = []
+
+        configdb = ['%s:%d' % (i[0], i[1]) for i in self.args['configserver']]
+        self.configdb = ','.join(configdb)
+
+        for host, port, path in self.args['configserver']:
+            m = {
+                'type' : 'Configserver',
+                'ssh_user' : args['ssh_user'],
+                'auth' : args['auth'],
+                'host': host,
+                'port': port,
+                'path': path,
+                'replset_name': 'none', #dummy
+            }
+            self.configserver_arr.append(m)
+
+        for host, port, path in self.args['mongos']:
+            m = {
+                'configdb' : self.configdb,
+                'type' : 'Mongos',
+                'ssh_user' : args['ssh_user'],
+                'auth' : args['auth'],
+                'host': host,
+                'port': port,
+                'path': path,
+                'replset_name': 'none', #dummy
+            }
+            self.mongos_arr.append(m)
+
+        for shard in self.args['shard']:
+            shard['ssh_user'] = self.args['ssh_user']
+            shard['auth'] = self.args['auth']
+            self.shard_arr.append(shard)
+
+    def _runjs(self, js):
+        logging.debug('_run_js: \n' + js.replace(' ', '').replace('\n', '  '))
+        filename = TmpFile().content_to_tmpfile(js)
+
+        [host, port, path] = self.args['mongos'][0]
+        key = self.args['key']
+
+        cmd = './mongodb-base/bin/mongo --quiet %(host)s:%(port)s/admin -u __system -p %(key)s' % locals()
+        cmd += ' ' + filename
+        r = common.system(cmd, logging.debug)
+        if r.find('command failed') >=0 or r.find('uncaught exception') >=0:
+            raise Exception('run js error: \n' + r)
+
+        logging.debug(r)
+        return r
+
+    def _do_addshard(self, shard):
+        members = ['%s:%d'%(host,port) for (id, (host, port, path)) in enumerate(shard['mongod'])]
+        members = ','.join(members)
+        js =''' 
+        sh.addShard( "%s/%s" );
+        ''' % (shard['replset_name'], members)
+
+        try: 
+            self._runjs(js)
+        except Exception as e: 
+            if str(e).find('E11000 duplicate key error index: config.shards.$_id_') >= 0:
+                logging.warning('shard already added !!!')
+                return 
+            if str(e).find('host already used') >= 0:
+                logging.warning('shard already added !!!')
+                return 
+            logging.warning('add shard return error with: \n' + str(e))
+
+    def start(self):
+        logging.notice('start replset')
+        for x in self.shard_arr:
+            Replset(x).start()
+        logging.notice('start configserve')
+        for x in self.configserver_arr:
+            Configserver(x).start()
+        logging.notice('start mongos')
+        for x in self.mongos_arr:
+            Mongos(x).start()
+
+        logging.notice('add shard')
+        for shard in self.args['shard']:
+            self._do_addshard(shard)
+
+        logging.notice('done!!')
+        self._runjs("sh.status()")
+
+        print "hint:"
+        print "sh.enableSharding('db')"
+        print "sh.shardCollection('db.collection', {uuid:1})"
+
+    def _do_at_all(self, cmd):
+        logging.notice("%s replset" % cmd)
+        for x in self.shard_arr:
+            eval('Replset(x).%s()' % cmd)
+        logging.notice("%s configserver" % cmd)
+        for x in self.configserver_arr:
+            eval('Configserver(x).%s()' % cmd)
+        logging.notice("%s mongos" % cmd)
+        for x in self.mongos_arr:
+            eval('Mongos(x).%s()' % cmd)
+
+    def stop(self):
+        self._do_at_all('stop')
+
+    def ps(self):
+        self._do_at_all('ps')
+
+    def log(self):
+        self._do_at_all('log')
+
+    def kill(self):
+        self._do_at_all('kill')
+
+    def clean(self):
+        self._do_at_all('clean')
 
 def discover_op():
     import inspect

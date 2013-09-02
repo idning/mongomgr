@@ -93,7 +93,7 @@ cluster_mig = {
     ], 
     'shard': [
         { # shard 1
-            'type' : 'replset',
+            'type' : 'Replset',
             'replset_name' : 'set_test_1',
             'mongod': [
                 # host,  port, install path
@@ -103,7 +103,7 @@ cluster_mig = {
             ]
         },
         { # shard 2
-            'type' : 'replset',
+            'type' : 'Replset',
             'replset_name' : 'set_test_2',
             'mongod': [
                 # host,  port, install path
