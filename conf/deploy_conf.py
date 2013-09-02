@@ -42,15 +42,16 @@ cluster_jomo = {
 
 cluster_single_mongod = {
     'type' : 'Mongod', 
+    'ssh_user' : 'rd',
     'host': '10.65.16.245', 
     'port': 7200,
-    'ssh_user' : 'rd',
     'path': '/home/rd/mongodb-deploy/cluster0/mongodb-7200',
     'auth' : {                  
         'user': 'structure',            # we will add this user at last
         'password': 'PcSmongoPcS',      # 
         'key':      'PcSmongoPcS',      # keyfile auth (the __system password)
     },
+    'replset_name': 'test-replset'
     #'extra' : '--replSet xxx',  #optional arg
 }
 
@@ -73,7 +74,6 @@ cluster0 = {
         ['10.65.19.27' , 7500, '/home/rd/mongodb-deploy/cluster0/mongodb-7500'],
     ]
 }
-
 
 cluster_mig = {
     'type' : 'Sharding',

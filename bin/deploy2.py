@@ -93,7 +93,8 @@ class Mongod(Base):
 
         self.args = args
 
-        self.args['startcmd'] = './bin/mongod -f ./conf/mongod.conf --port %(port)d --fork --keyFile=%(path)s/conf/mongokey' % self.args
+        self.args['startcmd'] = './bin/mongod -f ./conf/mongod.conf --port %(port)d --fork --replSet %(replset_name)s --keyFile=%(path)s/conf/mongokey' % self.args
+        #self.args['startcmd'] = './bin/mongod -f ./conf/mongod.conf --port %(port)d --fork --keyFile=%(path)s/conf/mongokey' % self.args
 
     def __str__(self):
         return '[%(role)s] [%(host)s:%(port)s]' % self.args
@@ -125,15 +126,22 @@ class Mongod(Base):
         cmd = 'rsync -avP ./mongodb-base/ %(ssh_user)s@%(host)s:%(path)s 1>/dev/null 2>/dev/null' % self.args
         common.system(cmd, logging.debug)
 
-    def _run_js(self, js):
-        logging.info('run_js: \n' + js.replace(' ', '').replace('\n', '  '))
+    def _runjs(self, js):
+        logging.info('_run_js: \n' + js.replace(' ', '').replace('\n', '  '))
         filename = TmpFile().content_to_tmpfile(js)
 
-        cmd = './mongodb-base/bin/mongo %(host)s:%(port)s/admin -u __system -p %(key)s' % self.args
+        cmd = './mongodb-base/bin/mongo %(host)s:%(port)s/admin -u __system -p %(key)s' % self.args 
+        cmd += ' ' + filename
         r = common.system(cmd, logging.info)
         if r.find('command failed') >=0 or r.find('uncaught exception') >=0:
             raise Exception('run js error: \n' + r)
-        logging.info(r)
+
+        logging.debug(r)
+        return r
+
+    def _adduser(self):
+        js = 'db.addUser("%(user)s", "%(password)s");' % self.args
+        self._runjs(js)
 
     def start(self):
         if self._alive():
@@ -150,6 +158,7 @@ class Mongod(Base):
         if not self._alive():
             raise Exception("%s mongod start Fail" % self)
         logging.info("%s start Success" % self)
+        #self._adduser() # we should not add user from mongod in replset mode
 
     def stop(self):
         cmd = 'cd %(path)s ; %(startcmd)s --shutdown' % self.args
@@ -174,13 +183,137 @@ class Mongod(Base):
         cmd = 'rm -rf %(path)s' % self.args
         print self._remote_run(cmd)
 
+class Replset(Base):
+    '''
+    replset: 
+        we should add user from primary
+    '''
+    def __init__(self, args):
+        args['role'] = self.__class__.__name__
+        args['user'] = args['auth']['user']
+        args['password'] = args['auth']['password']
+        args['key'] = args['auth']['key']
+
+        self.args = args
+        self.mongods = []
+        self.primary = None
+
+        for host, port, path in self.args['mongod']:
+            mongod = {
+                'type' : 'Mongod',
+                'ssh_user' : args['ssh_user'],
+                'auth' : args['auth'],
+                'replset_name': args['replset_name'],
+                'host': host,
+                'port': port,
+                'path': path,
+            }
+            self.mongods.append(mongod)
+
+    def __str__(self):
+        hosts = ','.join(['%s:%d' % (h, p) for h, p, _p in  self.args['mongod']])
+        return '[%(role)s] %(replset_name)s : ' + hosts
+
+    def _runjs(self, js, need_primary):
+        logging.info('_run_js: \n' + js.replace(' ', '').replace('\n', '  '))
+        filename = TmpFile().content_to_tmpfile(js)
+
+        if need_primary:
+            primary = self._get_primary()
+            host, port = primary.split(':')
+        else:
+            primary = self.args['mongod'][0]
+            host = socket.gethostbyname(primary[0])
+            port = primary[1]
+
+        key = self.args['key']
+
+        cmd = './mongodb-base/bin/mongo --quiet %(host)s:%(port)s/admin -u __system -p %(key)s' % locals()
+        cmd += ' ' + filename
+        r = common.system(cmd, logging.info)
+        if r.find('command failed') >=0 or r.find('uncaught exception') >=0:
+            raise Exception('run js error: \n' + r)
+
+        logging.debug(r)
+        return r
+
+    def _get_primary(self):
+        if self.primary:
+            return self.primary
+        js = 'printjson(rs.isMaster())'
+        rst = self._runjs(js, need_primary=False)
+        rst = re.sub('"localTime" : ISODate\(".*?"\),', '', rst)
+        #print rst
+        json = common.json_decode(rst)
+        if 'primary' in json:
+            self.primary = json['primary']
+            return self.primary
+        else:
+            return None
+
+    def _rs_init(self):
+        members = [{'_id': id, 'host': '%s:%d'%(host,port) } for (id, (host, port, path)) in enumerate(self.args['mongod'])]
+        replset_config = {
+            '_id': self.args['replset_name'],
+            'members': members
+        }
+        js = '''
+        config = %s;
+        rs.initiate(config);
+        ''' % json.dumps(replset_config)
+        
+        self._runjs(js, need_primary=False)
+
+        
+        while True:
+            primary = self._get_primary()
+            if primary:
+                break
+            logging.debug("waiting for rs.init")
+            time.sleep(3)
+        
+        logging.info('primary is %s ' % primary)
+        host, port = primary.split(':')
+        port = int(port) + 1000
+        user = self.args['user']
+        password = self.args['password']
+        logging.info('see http://%(user)s:%(password)s@%(host)s:%(port)s/_replSet' % locals())
+
+    def _adduser(self):
+        js = 'db.addUser("%(user)s", "%(password)s");' % self.args
+        self._runjs(js, need_primary=True)
+
+    def start(self):
+        for mongod in self.mongods:
+            Mongod(mongod).start()
+        self._rs_init()
+        self._adduser()
+
+    def stop(self):
+        for mongod in self.mongods:
+            Mongod(mongod).stop()
+
+    def ps(self):
+        for mongod in self.mongods:
+            Mongod(mongod).ps()
+        self._get_primary()
+
+    def log(self):
+        for mongod in self.mongods:
+            Mongod(mongod).log()
+
+    def kill(self):
+        for mongod in self.mongods:
+            Mongod(mongod).kill()
+
+    def clean(self):
+        for mongod in self.mongods:
+            Mongod(mongod).clean()
+
 class Mongos(Mongod):
     pass
 
 class Configserver(Mongod):
-    pass
-
-class Replset(Base):
     pass
 
 class Sharding(Base):
