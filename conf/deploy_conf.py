@@ -6,7 +6,7 @@
 
 
 #the downloaded mongodb-static-legacy path
-MONGO_DB_PATH = '/home/yanglin/soft_packages/mongodb-pcs-2.2.4/'
+MONGO_DB_PATH = '/home/yanglin/soft_packages/mongodb-build-zf00/'
 
 # hide it
 cluster_jomo = {

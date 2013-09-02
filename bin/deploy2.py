@@ -144,6 +144,7 @@ class Mongod(Base):
         self._runjs(js)
 
     def start(self):
+        logging.info('start %s' % self)
         if self._alive():
             logging.info('%s already alive:  we do nothing!' % self)
             return 
@@ -161,27 +162,34 @@ class Mongod(Base):
         #self._adduser() # we should not add user from mongod in replset mode
 
     def stop(self):
+        logging.info('stop %s' % self)
         cmd = 'cd %(path)s ; %(startcmd)s --shutdown' % self.args
-        print self._remote_run(cmd)
+        self._remote_run(cmd)
 
     def kill(self):
+        logging.info('kill %s' % self)
         cmd = 'pkill -9 -f \'%(startcmd)s\'' % self.args
-        print self._remote_run(cmd)
+        self._remote_run(cmd)
 
     def ps(self):
+        logging.info('ps %s' % self)
         cmd = 'pgrep -f \'%(startcmd)s\'' % self.args
-        print self._remote_run(cmd)
-        pass
+        rst = self._remote_run(cmd)
+        pid = rst.split('\n')[0]
+        cnt = rst.count('\n')
+        print '%(pid)s ... (%(cnt)s threads)' % locals()
 
     def log(self):
+        logging.info('log %s' % self)
         cmd = 'cd %(path)s ; tail -20 log/mongod.log' % self.args
         print self._remote_run(cmd)
 
     def clean(self):
+        logging.info('clean %s' % self)
         if self._alive():
             raise Exception("%s is still running, we can't clean it" % self)
         cmd = 'rm -rf %(path)s' % self.args
-        print self._remote_run(cmd)
+        self._remote_run(cmd)
 
 class Replset(Base):
     '''
@@ -285,16 +293,19 @@ class Replset(Base):
         self._runjs(js, need_primary=True)
 
     def start(self):
+        logging.notice("start %s" % self)
         for mongod in self.mongod_arr:
             Mongod(mongod).start()
         self._rs_init()
         self._adduser()
 
     def stop(self):
+        logging.notice("stop %s" % self)
         for mongod in self.mongod_arr:
             Mongod(mongod).stop()
 
     def ps(self):
+        logging.notice("ps %s" % self)
         for mongod in self.mongod_arr:
             Mongod(mongod).ps()
         try:
@@ -303,14 +314,17 @@ class Replset(Base):
             pass
 
     def log(self):
+        logging.notice("log %s" % self)
         for mongod in self.mongod_arr:
             Mongod(mongod).log()
 
     def kill(self):
+        logging.notice("kill %s" % self)
         for mongod in self.mongod_arr:
             Mongod(mongod).kill()
 
     def clean(self):
+        logging.notice("clean %s" % self)
         for mongod in self.mongod_arr:
             Mongod(mongod).clean()
 
@@ -379,13 +393,13 @@ class Sharding(Base):
             self.shard_arr.append(shard)
 
     def _do_at_all(self, cmd):
-        logging.notice("%s replset" % cmd)
+        logging.notice("+++ %s replset" % cmd)
         for x in self.shard_arr:
             eval('Replset(x).%s()' % cmd)
-        logging.notice("%s configserver" % cmd)
+        logging.notice("+++ %s configserver" % cmd)
         for x in self.configserver_arr:
             eval('Configserver(x).%s()' % cmd)
-        logging.notice("%s mongos" % cmd)
+        logging.notice("+++ %s mongos" % cmd)
         for x in self.mongos_arr:
             eval('Mongos(x).%s()' % cmd)
 
@@ -404,6 +418,10 @@ class Sharding(Base):
 
         logging.debug(r)
         return r
+
+    def _adduser(self):
+        js = 'db.addUser("%(user)s", "%(password)s");' % self.args
+        self._runjs(js)
 
     def _do_addshard(self, shard):
         members = ['%s:%d'%(host,port) for (id, (host, port, path)) in enumerate(shard['mongod'])]
@@ -424,17 +442,18 @@ class Sharding(Base):
             logging.warning('add shard return error with: \n' + str(e))
 
     def start(self):
-        logging.notice('start replset')
+        logging.notice('+++ start replset')
         for x in self.shard_arr:
             Replset(x).start()
-        logging.notice('start configserve')
+        logging.notice('+++ start configserve')
         for x in self.configserver_arr:
             Configserver(x).start()
-        logging.notice('start mongos')
+        logging.notice('+++ start mongos')
         for x in self.mongos_arr:
             Mongos(x).start()
 
-        logging.notice('add shard')
+        self._adduser()
+        logging.notice('+++ add shard')
         for shard in self.args['shard']:
             self._do_addshard(shard)
 
